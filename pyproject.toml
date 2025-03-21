@@ -22,6 +22,7 @@ Homepage = "https://github.com/yourusername/code-index-mcp"
 
 [project.scripts]
 code-indexer = "code_index_mcp.server:main"
+uvx = "code_index_mcp.server:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
