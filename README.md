@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/johnhuang316-code-index-mcp-badge.png)](https://mseep.ai/app/johnhuang316-code-index-mcp)
+
 # Code Index MCP
 
 <div align="center">
