@@ -69,7 +69,11 @@ This is the easiest and most common way to use the server. It's designed for use
 
 1.  **Prerequisite**: Make sure you have Python 3.8+ and [uv](https://github.com/astral-sh/uv) installed.
 
-2.  **Configure the Host App**: Add the following to your host application's MCP configuration file (e.g., `claude_desktop_config.json` for Claude Desktop):
+2.  **Configure the Host App**: Add the following to your host application's MCP configuration file.
+    
+    *Claude Desktop*  ->  `claude_desktop_config.json` 
+
+    *Claude Code* -> `~/.claude.json`.  There is one `mcpServers` for each project and one global 
 
     ```json
     {
@@ -84,7 +88,7 @@ This is the easiest and most common way to use the server. It's designed for use
     }
     ```
 
-3.  **Restart the Host App**: After adding the configuration, restart the application. The `uvx` command will automatically handle the installation and execution of the `code-index-mcp` server in the background.
+4.  **Restart the Host App**: After adding the configuration, restart the application. The `uvx` command will automatically handle the installation and execution of the `code-index-mcp` server in the background.
 
 ### For Local Development
 
