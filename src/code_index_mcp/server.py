@@ -500,6 +500,88 @@ def get_file_summary(file_path: str, ctx: Context) -> Dict[str, Any]:
                 "function_count": len(functions),
             })
 
+        elif ext == '.java':
+            # Java analysis
+            package = ""
+            imports = []
+            classes = []
+            interfaces = []
+            methods = []
+            enums = []
+
+            for i, line in enumerate(lines):
+                line = line.strip()
+
+                # Check for package declaration
+                if line.startswith('package '):
+                    package = line.replace('package ', '').rstrip(';')
+
+                # Check for imports
+                if line.startswith('import '):
+                    imports.append(line)
+
+                # Check for class definitions
+                if line.startswith('public class ') or line.startswith('private class ') or line.startswith('protected class ') or line.startswith('class '):
+                    class_name = ""
+                    if 'class ' in line:
+                        parts = line.split('class ')[1]
+                        class_name = parts.split(' ')[0].split('{')[0].split('<')[0].strip()
+                    classes.append({
+                        "line": i + 1,
+                        "name": class_name
+                    })
+
+                # Check for interface definitions
+                if line.startswith('public interface ') or line.startswith('private interface ') or line.startswith('protected interface ') or line.startswith('interface '):
+                    interface_name = ""
+                    if 'interface ' in line:
+                        parts = line.split('interface ')[1]
+                        interface_name = parts.split(' ')[0].split('{')[0].split('<')[0].strip()
+                    interfaces.append({
+                        "line": i + 1,
+                        "name": interface_name
+                    })
+
+                # Check for enum definitions
+                if line.startswith('public enum ') or line.startswith('private enum ') or line.startswith('protected enum ') or line.startswith('enum '):
+                    enum_name = ""
+                    if 'enum ' in line:
+                        parts = line.split('enum ')[1]
+                        enum_name = parts.split(' ')[0].split('{')[0].strip()
+                    enums.append({
+                        "line": i + 1,
+                        "name": enum_name
+                    })
+
+                # Check for method definitions
+                if ('public ' in line or 'private ' in line or 'protected ' in line) and '(' in line and ')' in line:
+                    # Skip constructor calls and other non-method patterns
+                    if not line.startswith('//') and not line.startswith('*') and not line.startswith('/*'):
+                        # Extract method name
+                        method_parts = line.split('(')[0].strip().split()
+                        if len(method_parts) >= 2:
+                            method_name = method_parts[-1]
+                            # Filter out common non-method patterns
+                            if not method_name.startswith('new ') and not method_name.endswith('='):
+                                methods.append({
+                                    "line": i + 1,
+                                    "name": method_name
+                                })
+
+            summary.update({
+                "package": package,
+                "imports": imports,
+                "classes": classes,
+                "interfaces": interfaces,
+                "methods": methods,
+                "enums": enums,
+                "import_count": len(imports),
+                "class_count": len(classes),
+                "interface_count": len(interfaces),
+                "method_count": len(methods),
+                "enum_count": len(enums),
+            })
+
         return summary
     except Exception as e:
         return {"error": f"Error analyzing file: {e}"}
