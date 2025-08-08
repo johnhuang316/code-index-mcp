@@ -329,6 +329,34 @@ uv run code-index-mcp
 npx @modelcontextprotocol/inspector uvx code-index-mcp
 ```
 
+### 🛠️ **CLI Tool Usage**
+For local testing and debugging, you can use the included CLI tool to interact directly with the indexer's services. Each invocation of this tool is a fresh start of the MCP server.
+
+**Running the CLI:**
+```bash
+# Index a project
+python src/code_index_mcp/cli.py index --path /path/to/your/project
+
+# Call a specific tool with parameters
+python src/code_index_mcp/cli.py call <tool_name> --params '{"param1": "value1"}' --path /path/to/your/project
+```
+
+**Available CLI Commands:**
+- `index`: Initializes and runs the indexing process for a specified project path.
+- `call`: Invokes a specific tool method with JSON parameters.
+
+**Example `call` Usage:**
+```bash
+# Search for code
+uv run python src/code_index_mcp/cli.py call search_code_advanced --params '{"pattern": "class.*", "file_pattern": "*.py"}' --path /path/to/your/project
+
+# Get file summary
+uv run python src/code_index_mcp/cli.py call get_file_summary --params '{"file_path": "src/module.py"}' --path /path/to/your/project
+
+# Refresh index
+uv run python src/code_index_mcp/cli.py call refresh_index --params '{}' --path /path/to/your/project
+```
+
 ### 🤝 **Contributing**
 Contributions are welcome! Please feel free to submit a Pull Request.
 
