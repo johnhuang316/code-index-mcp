@@ -52,6 +52,7 @@ Code Index MCP is a [Model Context Protocol](https://modelcontextprotocol.io) se
 - **Persistent Caching**: Stores indexes for lightning-fast subsequent access
 - **Lazy Loading**: Tools detected only when needed for optimal startup
 - **Memory Efficient**: Intelligent caching strategies for large codebases
+- **🚫 `.indexerignore` Support**: Exclude files and directories from indexing and search using gitignore-style patterns
 
 ## Supported File Types
 
@@ -127,6 +128,60 @@ Code Index MCP is a [Model Context Protocol](https://modelcontextprotocol.io) se
 - Configuration (`.json`, `.xml`, `.yml`, `.yaml`)
 
 </details>
+
+## 🚫 `.indexerignore` Support
+
+Code Index MCP supports `.indexerignore` files to exclude specific files and directories from indexing and search operations. This feature works similarly to `.gitignore` files and helps keep your index focused on relevant code.
+
+### How It Works
+
+1. **Create a `.indexerignore` file** in your project root directory
+2. **Add patterns** using gitwildmatch syntax (similar to gitignore)
+3. **The indexer will automatically** skip matching files and directories
+
+### Example `.indexerignore` File
+
+```
+# Ignore build directories
+build/
+dist/
+target/
+
+# Ignore dependency directories
+node_modules/
+venv/
+.env/
+
+# Ignore temporary files
+*.tmp
+*.log
+.DS_Store
+
+# Ignore test files (if not needed for analysis)
+tests/
+__tests__/
+test/
+```
+
+### Pattern Syntax
+
+- `*.py` - Ignore all Python files
+- `build/` - Ignore the build directory and all its contents
+- `!important.py` - Include `important.py` even if it would be ignored by a previous pattern
+- `docs/*.md` - Ignore all Markdown files in the docs directory
+
+### Debugging
+
+If you're having issues with the `.indexerignore` functionality:
+- Check the `.indexer.log` file created in your project root during indexing
+- This log shows which files are included (+) and excluded (-) from the index
+- Look for patterns that might not be working as expected
+
+### Integration
+
+- **Indexing**: Files matching `.indexerignore` patterns are skipped during project scanning
+- **Searching**: Search operations automatically exclude ignored files
+- **File Watcher**: The auto-refresh feature also respects ignore patterns
 
 ## Quick Start
 
