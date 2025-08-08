@@ -1,6 +1,7 @@
 """
 Search Strategy for ugrep
 """
+import os
 import shutil
 import subprocess
 from typing import Dict, List, Optional, Tuple
@@ -66,6 +67,11 @@ class UgrepStrategy(SearchStrategy):
             
         if file_pattern:
             cmd.extend(['-g', file_pattern])  # Correct parameter for file patterns
+
+        # Exclude files and directories from .indexerignore
+        ignore_file = os.path.join(base_path, '.indexerignore')
+        if os.path.exists(ignore_file):
+            cmd.append(f'--ignore-files={ignore_file}')
 
         # Add '--' to treat pattern as a literal argument, preventing injection
         cmd.append('--')

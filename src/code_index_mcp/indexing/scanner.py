@@ -4,12 +4,13 @@ Project scanner for file discovery and categorization.
 This module handles scanning project directories, building directory trees,
 and categorizing special files like configuration, documentation, and build files.
 """
-
+ 
 import os
 import glob
+import pathspec
 from pathlib import Path
 from datetime import datetime
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 from .models import FileInfo, ProjectScanResult, SpecialFiles
 from .qualified_names import normalize_file_path
 from code_index_mcp.constants import SUPPORTED_EXTENSIONS
@@ -72,6 +73,11 @@ class ProjectScanner:
     def __init__(self, base_path: str):
         self.base_path = Path(base_path).resolve()
         self.file_id_counter = 0
+        self.log_file = self.base_path / '.indexer.log'
+        # Clear log file at the start of each scan
+        if self.log_file.exists():
+            self.log_file.unlink()
+        self.ignore_spec = self._load_ignore_spec()
     
     def scan_project(self) -> ProjectScanResult:
         """
@@ -103,25 +109,58 @@ class ProjectScanner:
             project_metadata=project_metadata
         )
     
+    def _load_ignore_spec(self) -> Optional[pathspec.PathSpec]:
+        """Load .indexerignore file and return a PathSpec object."""
+        ignore_file = self.base_path / '.indexerignore'
+        if ignore_file.is_file():
+            try:
+                with open(ignore_file, 'r', encoding='utf-8') as f:
+                    return pathspec.PathSpec.from_lines('gitwildmatch', f)
+            except (OSError, UnicodeDecodeError):
+                return None
+        return None
+
     def _discover_files(self) -> List[str]:
         """Discover all files in the project directory."""
         files = []
         
-        for root, dirs, filenames in os.walk(self.base_path):
-            # Skip common directories that shouldn't be indexed
-            dirs[:] = [d for d in dirs if not self._should_skip_directory(d)]
-            
-            for filename in filenames:
-                if not self._should_skip_file(filename):
-                    file_path = os.path.join(root, filename)
-                    # Convert to relative path from base_path
-                    rel_path = os.path.relpath(file_path, self.base_path)
-                    files.append(normalize_file_path(rel_path))  # Normalize path separators
-        
+        with open(self.log_file, 'a', encoding='utf-8') as f:
+            for root, dirs, filenames in os.walk(self.base_path, topdown=True):
+                # Convert root to be relative to base_path for pathspec matching
+                relative_root = os.path.relpath(root, self.base_path)
+                if relative_root == '.':
+                    relative_root = ''
+
+                # Filter directories in-place
+                original_dirs = list(dirs)
+                
+                # Log and filter directories
+                kept_dirs = []
+                for d in original_dirs:
+                    if self._should_skip_directory(d, relative_root):
+                        f.write(f"- {os.path.join(relative_root, d)}\n")
+                    else:
+                        f.write(f"+ {os.path.join(relative_root, d)}\n")
+                        kept_dirs.append(d)
+                dirs[:] = kept_dirs
+
+                for filename in filenames:
+                    relative_path = os.path.join(relative_root, filename)
+                    if self._should_skip_file(filename, relative_path):
+                        f.write(f"- {relative_path}\n")
+                    else:
+                        f.write(f"+ {relative_path}\n")
+                        files.append(normalize_file_path(relative_path))
+
         return files
     
-    def _should_skip_directory(self, dirname: str) -> bool:
+    def _should_skip_directory(self, dirname: str, relative_root: str) -> bool:
         """Check if directory should be skipped during scanning."""
+        # Check against .indexerignore first
+        dir_path = os.path.join(relative_root, dirname)
+        if self.ignore_spec and self.ignore_spec.match_file(dir_path):
+            return True
+
         skip_dirs = {
             '__pycache__', '.pytest_cache', '.mypy_cache',
             'node_modules', '.npm', '.yarn',
@@ -137,10 +176,14 @@ class ProjectScanner:
         }
         return dirname in skip_dirs or dirname.startswith('.')
     
-    def _should_skip_file(self, filename: str) -> bool:
+    def _should_skip_file(self, filename: str, relative_path: str) -> bool:
         """Check if file should be skipped during scanning."""
+        # Check against .indexerignore first
+        if self.ignore_spec and self.ignore_spec.match_file(relative_path):
+            return True
+
         # Skip hidden files and common non-code files
-        if filename.startswith('.') and filename not in {'.gitignore', '.gitattributes'}:
+        if filename.startswith('.') and filename not in {'.gitignore', '.gitattributes', '.indexerignore'}:
             return True
         
         # Skip common binary and temporary files
