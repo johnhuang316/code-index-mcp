@@ -122,7 +122,8 @@ def search_code_advanced(
     context_lines: int = 0,
     file_pattern: str = None,
     fuzzy: bool = False,
-    regex: bool = None
+    regex: bool = None,
+    max_line_length: int = 200
 ) -> Dict[str, Any]:
     """
     Search for a code pattern in the project using an advanced, fast tool.
@@ -136,6 +137,7 @@ def search_code_advanced(
         context_lines: Number of lines to show before and after the match.
         file_pattern: A glob pattern to filter files to search in
                      (e.g., "*.py", "*.js", "test_*.py").
+        max_line_length: Optional. Default 200. Limits the length of lines when context_lines is used.
                      All search tools now handle glob patterns consistently:
                      - ugrep: Uses glob patterns (*.py, *.{js,ts})
                      - ripgrep: Uses glob patterns (*.py, *.{js,ts})
@@ -164,7 +166,8 @@ def search_code_advanced(
         context_lines=context_lines,
         file_pattern=file_pattern,
         fuzzy=fuzzy,
-        regex=regex
+        regex=regex,
+        max_line_length=max_line_length
     )
 
 @mcp.tool()

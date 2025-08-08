@@ -27,7 +27,8 @@ class RipgrepStrategy(SearchStrategy):
         context_lines: int = 0,
         file_pattern: Optional[str] = None,
         fuzzy: bool = False,
-        regex: bool = False
+        regex: bool = False,
+        max_line_length: Optional[int] = None
     ) -> Dict[str, List[Tuple[int, str]]]:
         """
         Execute a search using ripgrep.
@@ -40,6 +41,7 @@ class RipgrepStrategy(SearchStrategy):
             file_pattern: File pattern to filter
             fuzzy: Enable word boundary matching (not true fuzzy search)
             regex: Enable regex pattern matching
+            max_line_length: Optional. Limit the length of lines when context_lines is used
         """
         cmd = ['rg', '--line-number', '--no-heading', '--color=never', '--no-ignore']
 
@@ -87,10 +89,10 @@ class RipgrepStrategy(SearchStrategy):
             if process.returncode > 1:
                 raise RuntimeError(f"ripgrep failed with exit code {process.returncode}: {process.stderr}")
 
-            return parse_search_output(process.stdout, base_path)
+            return parse_search_output(process.stdout, base_path, max_line_length)
         
         except FileNotFoundError:
             raise RuntimeError("ripgrep (rg) not found. Please install it and ensure it's in your PATH.")
         except Exception as e:
             # Re-raise other potential exceptions like permission errors
-            raise RuntimeError(f"An error occurred while running ripgrep: {e}") 
+            raise RuntimeError(f"An error occurred while running ripgrep: {e}")
