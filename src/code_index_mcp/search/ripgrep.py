@@ -1,6 +1,7 @@
 """
 Search Strategy for ripgrep
 """
+import os
 import shutil
 import subprocess
 from typing import Dict, List, Optional, Tuple
@@ -67,6 +68,11 @@ class RipgrepStrategy(SearchStrategy):
         if file_pattern:
             cmd.extend(['--glob', file_pattern])
 
+        # Exclude files and directories from .indexerignore
+        ignore_file = os.path.join(base_path, '.indexerignore')
+        if os.path.exists(ignore_file):
+            cmd.append(f'--ignore-file={ignore_file}')
+
         # Add -- to treat pattern as a literal argument, preventing injection
         cmd.append('--')
         cmd.append(search_pattern)
@@ -93,4 +99,4 @@ class RipgrepStrategy(SearchStrategy):
             raise RuntimeError("ripgrep (rg) not found. Please install it and ensure it's in your PATH.")
         except Exception as e:
             # Re-raise other potential exceptions like permission errors
-            raise RuntimeError(f"An error occurred while running ripgrep: {e}") 
+            raise RuntimeError(f"An error occurred while running ripgrep: {e}")

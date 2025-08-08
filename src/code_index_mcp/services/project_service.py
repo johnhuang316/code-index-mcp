@@ -127,7 +127,7 @@ class ProjectService(BaseService):
         print(f"WARNING: File watcher error: {message}")
         print("   Auto-refresh is disabled. Use refresh_index for manual updates.")
 
-    def initialize_project(self, path: str) -> str:
+    def initialize_project(self, path: str, generate_log_file: bool = False) -> str:
         """
         Initialize a project with the given path.
 
@@ -152,7 +152,7 @@ class ProjectService(BaseService):
             import concurrent.futures
             
             def run_async():
-                return asyncio.run(self._initialize_project_with_lock(path))
+                return asyncio.run(self._initialize_project_with_lock(path, generate_log_file))
             
             with concurrent.futures.ThreadPoolExecutor() as executor:
                 future = executor.submit(run_async)
@@ -160,17 +160,17 @@ class ProjectService(BaseService):
                 
         except RuntimeError:
             # No event loop running, we can use asyncio.run directly
-            return asyncio.run(self._initialize_project_with_lock(path))
+            return asyncio.run(self._initialize_project_with_lock(path, generate_log_file))
 
-    async def _initialize_project_with_lock(self, path: str) -> str:
+    async def _initialize_project_with_lock(self, path: str, generate_log_file: bool = False) -> str:
         """
         Initialize project with async lock protection.
         """
         # Use atomic operation to prevent concurrent project switching
         async with self._project_switch_lock:
-            return await self._initialize_project_atomic(path)
+            return await self._initialize_project_atomic(path, generate_log_file)
 
-    async def _initialize_project_atomic(self, path: str) -> str:
+    async def _initialize_project_atomic(self, path: str, generate_log_file: bool = False) -> str:
         """
         Atomic implementation of project initialization.
         """
@@ -248,7 +248,7 @@ class ProjectService(BaseService):
 
         # Build new index
         try:
-            file_count = self._index_project(abs_path)
+            file_count = self._index_project(abs_path, generate_log_file)
         except Exception as e:
             print(f"Error building index: {e}")
             raise ValueError(f"Error building index: {e}") from e
@@ -343,7 +343,7 @@ class ProjectService(BaseService):
             error_data = {"error": "No directory tree available in index"}
             return json.dumps(error_data, indent=2)
 
-    def _index_project(self, base_path: str) -> int:
+    def _index_project(self, base_path: str, generate_log_file: bool = False) -> int:
         """
         Build the project index using the IndexBuilder system.
 
@@ -359,7 +359,7 @@ class ProjectService(BaseService):
         from ..indexing import IndexBuilder
 
         builder = IndexBuilder()
-        code_index = builder.build_index(base_path)
+        code_index = builder.build_index(base_path, generate_log_file)
 
         # Convert to dictionary for storage
         index_json = code_index.to_json()
@@ -380,4 +380,3 @@ class ProjectService(BaseService):
 
         print(f"Index built successfully with {file_count} files")
         return file_count
-

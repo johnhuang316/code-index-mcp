@@ -1,6 +1,7 @@
 """
 Search Strategy for standard grep
 """
+import os
 import shutil
 import subprocess
 from typing import Dict, List, Optional, Tuple
@@ -81,6 +82,19 @@ class GrepStrategy(SearchStrategy):
             # Note: grep's --include uses glob patterns, not regex
             cmd.append(f'--include={file_pattern}')
 
+        # Exclude files and directories from .indexerignore
+        ignore_file = os.path.join(base_path, '.indexerignore')
+        if os.path.exists(ignore_file):
+            with open(ignore_file, 'r', encoding='utf-8') as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith('#'):
+                        continue
+                    if line.endswith('/'):
+                        cmd.append(f'--exclude-dir={line[:-1]}')
+                    else:
+                        cmd.append(f'--exclude={line}')
+
         # Add -- to treat pattern as a literal argument, preventing injection
         cmd.append('--')
         cmd.append(search_pattern)
@@ -107,4 +121,4 @@ class GrepStrategy(SearchStrategy):
         except FileNotFoundError:
             raise RuntimeError("'grep' not found. Please install it and ensure it's in your PATH.")
         except Exception as e:
-            raise RuntimeError(f"An error occurred while running grep: {e}") 
+            raise RuntimeError(f"An error occurred while running grep: {e}")
