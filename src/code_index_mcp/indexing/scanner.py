@@ -70,13 +70,16 @@ class ProjectScanner:
 
     }
     
-    def __init__(self, base_path: str):
+    def __init__(self, base_path: str, generate_log_file: bool = False):
         self.base_path = Path(base_path).resolve()
         self.file_id_counter = 0
-        self.log_file = self.base_path / '.indexer.log'
-        # Clear log file at the start of each scan
-        if self.log_file.exists():
+        self.generate_log_file = generate_log_file
+        self.log_file = self.base_path / '.indexer.log' if self.generate_log_file else None
+        
+        # Clear log file at the start of each scan if it's enabled
+        if self.log_file and self.log_file.exists():
             self.log_file.unlink()
+            
         self.ignore_spec = self._load_ignore_spec()
     
     def scan_project(self) -> ProjectScanResult:
@@ -124,7 +127,7 @@ class ProjectScanner:
         """Discover all files in the project directory."""
         files = []
         
-        with open(self.log_file, 'a', encoding='utf-8') as f:
+        def process_directory(log_f):
             for root, dirs, filenames in os.walk(self.base_path, topdown=True):
                 # Convert root to be relative to base_path for pathspec matching
                 relative_root = os.path.relpath(root, self.base_path)
@@ -137,20 +140,26 @@ class ProjectScanner:
                 # Log and filter directories
                 kept_dirs = []
                 for d in original_dirs:
-                    if self._should_skip_directory(d, relative_root):
-                        f.write(f"- {os.path.join(relative_root, d)}\n")
-                    else:
-                        f.write(f"+ {os.path.join(relative_root, d)}\n")
+                    should_skip = self._should_skip_directory(d, relative_root)
+                    if log_f:
+                        log_f.write(f"{'-' if should_skip else '+'} {os.path.join(relative_root, d)}\n")
+                    if not should_skip:
                         kept_dirs.append(d)
                 dirs[:] = kept_dirs
 
                 for filename in filenames:
                     relative_path = os.path.join(relative_root, filename)
-                    if self._should_skip_file(filename, relative_path):
-                        f.write(f"- {relative_path}\n")
-                    else:
-                        f.write(f"+ {relative_path}\n")
+                    should_skip = self._should_skip_file(filename, relative_path)
+                    if log_f:
+                        log_f.write(f"{'-' if should_skip else '+'} {relative_path}\n")
+                    if not should_skip:
                         files.append(normalize_file_path(relative_path))
+
+        if self.log_file:
+            with open(self.log_file, 'a', encoding='utf-8') as f:
+                process_directory(f)
+        else:
+            process_directory(None)
 
         return files
     

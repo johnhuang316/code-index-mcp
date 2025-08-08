@@ -109,9 +109,15 @@ def get_settings_stats() -> str:
 
 @mcp.tool()
 @handle_mcp_tool_errors(return_type='str')
-def set_project_path(path: str, ctx: Context) -> str:
-    """Set the base project path for indexing."""
-    return ProjectService(ctx).initialize_project(path)
+def set_project_path(path: str, ctx: Context, generate_log_file: bool = False) -> str:
+    """
+    Set the base project path for indexing and initializes the index.
+
+    Args:
+        path: The project directory path to initialize. Must be a full path, not relative.
+        generate_log_file: Enable to generate a .logger.log file containing a list of all files and their included/ignored status.
+    """
+    return ProjectService(ctx).initialize_project(path, generate_log_file)
 
 @mcp.tool()
 @handle_mcp_tool_errors(return_type='dict')
