@@ -14,13 +14,18 @@ from typing import Dict, List, Optional, Tuple, Any
 
 from ..indexing.qualified_names import normalize_file_path
 
-def parse_search_output(output: str, base_path: str) -> Dict[str, List[Tuple[int, str]]]:
+def parse_search_output(
+    output: str,
+    base_path: str,
+    max_line_length: Optional[int] = None
+) -> Dict[str, List[Tuple[int, str]]]:
     """
     Parse the output of command-line search tools (grep, ag, rg).
 
     Args:
         output: The raw output from the command-line tool.
         base_path: The base path of the project to make file paths relative.
+        max_line_length: Optional maximum line length to truncate long lines.
 
     Returns:
         A dictionary where keys are file paths and values are lists of (line_number, line_content) tuples.
@@ -52,6 +57,10 @@ def parse_search_output(output: str, base_path: str) -> Dict[str, List[Tuple[int
             
             # Normalize path separators for consistency
             relative_path = normalize_file_path(relative_path)
+
+            # Truncate content if it exceeds max_line_length
+            if max_line_length and len(content) > max_line_length:
+                content = content[:max_line_length] + '... (truncated)'
 
             if relative_path not in results:
                 results[relative_path] = []
@@ -175,7 +184,8 @@ class SearchStrategy(ABC):
         context_lines: int = 0,
         file_pattern: Optional[str] = None,
         fuzzy: bool = False,
-        regex: bool = False
+        regex: bool = False,
+        max_line_length: Optional[int] = None
     ) -> Dict[str, List[Tuple[int, str]]]:
         """
         Execute a search using the specific strategy.
@@ -193,4 +203,3 @@ class SearchStrategy(ABC):
             A dictionary mapping filenames to lists of (line_number, line_content) tuples.
         """
         pass
-
