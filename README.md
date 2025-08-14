@@ -212,6 +212,29 @@ Then configure:
 
 </details>
 
+#### ⚙️ **Cline VS Code Extension Setup**
+
+To run under the Cline VS Code extension, use the following configuration (modify the path to suit your installation):
+
+**Add to your MCP configuration** (e.g., `cline_mcp_settings.json`):
+```json
+{
+  "mcpServers": {
+    "code-index": {
+      "command": "uv",
+      "args": [
+        "run", 
+        "--directory",
+        "/home/user/code-index-mcp", 
+        "python", 
+        "run.py"
+      ] 
+    }
+  }
+}
+```
+
+
 ## Available Tools
 
 ### 🏗️ **Project Management**
