@@ -31,7 +31,8 @@ class SearchService(BaseService):
         context_lines: int = 0,
         file_pattern: Optional[str] = None,
         fuzzy: bool = False,
-        regex: Optional[bool] = None
+        regex: Optional[bool] = None,
+        max_line_length: Optional[int] = 200
     ) -> Dict[str, Any]:
         """
         Search for code patterns in the project.
@@ -45,6 +46,7 @@ class SearchService(BaseService):
             file_pattern: Glob pattern to filter files
             fuzzy: Whether to enable fuzzy matching
             regex: Regex mode - True/False to force, None for auto-detection
+            max_line_length: Optional. Default 200. Limits the length of lines when context_lines is used.
 
         Returns:
             Dictionary with search results or error information
@@ -89,7 +91,8 @@ class SearchService(BaseService):
                 context_lines=context_lines,
                 file_pattern=file_pattern,
                 fuzzy=fuzzy,
-                regex=regex
+                regex=regex,
+                max_line_length=max_line_length
             )
             return ResponseFormatter.search_results_response(results)
         except Exception as e:

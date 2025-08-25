@@ -27,7 +27,8 @@ class AgStrategy(SearchStrategy):
         context_lines: int = 0,
         file_pattern: Optional[str] = None,
         fuzzy: bool = False,
-        regex: bool = False
+        regex: bool = False,
+        max_line_length: Optional[int] = None
     ) -> Dict[str, List[Tuple[int, str]]]:
         """
         Execute a search using The Silver Searcher (ag).
@@ -40,6 +41,7 @@ class AgStrategy(SearchStrategy):
             file_pattern: File pattern to filter
             fuzzy: Enable word boundary matching (not true fuzzy search)
             regex: Enable regex pattern matching
+            max_line_length: Optional. Limit the length of lines when context_lines is used
         """
         # ag prints line numbers and groups by file by default, which is good.
         # --noheading is used to be consistent with other tools' output format.
@@ -116,10 +118,10 @@ class AgStrategy(SearchStrategy):
             if process.returncode > 1:
                  raise RuntimeError(f"ag failed with exit code {process.returncode}: {process.stderr}")
 
-            return parse_search_output(process.stdout, base_path)
+            return parse_search_output(process.stdout, base_path, max_line_length)
         
         except FileNotFoundError:
             raise RuntimeError("'ag' (The Silver Searcher) not found. Please install it and ensure it's in your PATH.")
         except Exception as e:
             # Re-raise other potential exceptions like permission errors
-            raise RuntimeError(f"An error occurred while running ag: {e}") 
+            raise RuntimeError(f"An error occurred while running ag: {e}")

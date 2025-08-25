@@ -27,7 +27,8 @@ class UgrepStrategy(SearchStrategy):
         context_lines: int = 0,
         file_pattern: Optional[str] = None,
         fuzzy: bool = False,
-        regex: bool = False
+        regex: bool = False,
+        max_line_length: Optional[int] = None
     ) -> Dict[str, List[Tuple[int, str]]]:
         """
         Execute a search using the 'ug' command-line tool.
@@ -40,6 +41,7 @@ class UgrepStrategy(SearchStrategy):
             file_pattern: File pattern to filter
             fuzzy: Enable true fuzzy search (ugrep native support)
             regex: Enable regex pattern matching
+            max_line_length: Optional. Limit the length of lines when context_lines is used
         """
         if not self.is_available():
             return {"error": "ugrep (ug) command not found."}
@@ -89,7 +91,7 @@ class UgrepStrategy(SearchStrategy):
                 error_output = process.stderr.strip()
                 return {"error": f"ugrep execution failed with code {process.returncode}", "details": error_output}
 
-            return parse_search_output(process.stdout, base_path)
+            return parse_search_output(process.stdout, base_path, max_line_length)
 
         except FileNotFoundError:
             return {"error": "ugrep (ug) command not found. Please ensure it's installed and in your PATH."}
