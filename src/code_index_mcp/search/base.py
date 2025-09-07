@@ -40,6 +40,11 @@ def parse_search_output(output: str, base_path: str) -> Dict[str, List[Tuple[int
                 file_path_abs = f"{parts[0]}:{parts[1]}"
                 line_number_str = parts[2].split(':', 1)[0]
                 content = parts[2].split(':', 1)[1]
+            elif len(parts) == 1 and parts[0].startswith('./'):
+                matches = re.findall(r'(.*?)-(\d+)-\t(.*)', parts[0])[0]
+                file_path_abs = matches[0].lstrip('./')
+                line_number_str = matches[1]
+                content = matches[2]
             else:
                 file_path_abs = parts[0]
                 line_number_str = parts[1]
