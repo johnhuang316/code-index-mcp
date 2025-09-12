@@ -70,8 +70,13 @@ def parse_search_output(
             
             line_number = int(line_number_str)
 
-            # Make the file path relative to the base_path
-            relative_path = os.path.relpath(file_path_abs, normalized_base_path)
+            # If the path is already relative (doesn't start with /), keep it as is
+            # Otherwise, make it relative to the base_path
+            if os.path.isabs(file_path_abs):
+                relative_path = os.path.relpath(file_path_abs, normalized_base_path)
+            else:
+                # Path is already relative, use it as is
+                relative_path = file_path_abs
             
             # Normalize path separators for consistency
             relative_path = normalize_file_path(relative_path)

@@ -46,7 +46,7 @@ class UgrepStrategy(SearchStrategy):
         if not self.is_available():
             return {"error": "ugrep (ug) command not found."}
 
-        cmd = ['ug', '--line-number', '--no-heading']
+        cmd = ['ug', '-r', '--line-number', '--no-heading']
 
         if fuzzy:
             # ugrep has native fuzzy search support
@@ -67,7 +67,7 @@ class UgrepStrategy(SearchStrategy):
             cmd.extend(['-A', str(context_lines), '-B', str(context_lines)])
             
         if file_pattern:
-            cmd.extend(['-g', file_pattern])  # Correct parameter for file patterns
+            cmd.extend(['--include', file_pattern])
 
         # Add '--' to treat pattern as a literal argument, preventing injection
         cmd.append('--')
