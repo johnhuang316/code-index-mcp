@@ -17,7 +17,6 @@ from typing import Dict, List, Optional, Any
 
 from .json_index_builder import JSONIndexBuilder
 from ..constants import SETTINGS_DIR, INDEX_FILE
-from ..utils import FileFilter
 
 logger = logging.getLogger(__name__)
 
@@ -281,7 +280,8 @@ class JSONIndexManager:
             return False
 
         try:
-            file_filter = FileFilter()
+            from code_index_mcp.utils.file_filter import FileFilter as _FileFilter  # pylint: disable=C0415
+            file_filter = _FileFilter()
 
             # Simple freshness check - index exists and is recent
             index_mtime = os.path.getmtime(self.index_path)
