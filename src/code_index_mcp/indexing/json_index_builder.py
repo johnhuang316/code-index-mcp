@@ -45,18 +45,18 @@ class JSONIndexBuilder:
 
     def __init__(self, project_path: str, additional_excludes: Optional[List[str]] = None):
         from ..utils import FileFilter
-        
+
         # Input validation
         if not isinstance(project_path, str):
             raise ValueError(f"Project path must be a string, got {type(project_path)}")
-        
+
         project_path = project_path.strip()
         if not project_path:
             raise ValueError("Project path cannot be empty")
-            
+
         if not os.path.isdir(project_path):
             raise ValueError(f"Project path does not exist: {project_path}")
-        
+
         self.project_path = project_path
         self.in_memory_index: Optional[Dict[str, Any]] = None
         self.strategy_factory = StrategyFactory()
@@ -74,11 +74,11 @@ class JSONIndexBuilder:
     def _process_file(self, file_path: str, specialized_extensions: set) -> Optional[Tuple[Dict, Dict, str, bool]]:
         """
         Process a single file - designed for parallel execution.
-        
+
         Args:
             file_path: Path to the file to process
             specialized_extensions: Set of extensions with specialized parsers
-        
+
         Returns:
             Tuple of (symbols, file_info, language, is_specialized) or None on error
         """
@@ -88,20 +88,20 @@ class JSONIndexBuilder:
 
             ext = Path(file_path).suffix.lower()
             rel_path = os.path.relpath(file_path, self.project_path).replace('\\', '/')
-            
+
             # Get appropriate strategy
             strategy = self.strategy_factory.get_strategy(ext)
-            
+
             # Track strategy usage
             is_specialized = ext in specialized_extensions
-            
+
             # Parse file using strategy
             symbols, file_info = strategy.parse_file(rel_path, content)
-            
+
             logger.debug(f"Parsed {rel_path}: {len(symbols)} symbols ({file_info.language})")
-            
+
             return (symbols, {rel_path: file_info}, file_info.language, is_specialized)
-        
+
         except Exception as e:
             logger.warning(f"Error processing {file_path}: {e}")
             return None
@@ -128,49 +128,49 @@ class JSONIndexBuilder:
 
         # Get specialized extensions for tracking
         specialized_extensions = set(self.strategy_factory.get_specialized_extensions())
-        
+
         # Get list of files to process
         files_to_process = self._get_supported_files()
         total_files = len(files_to_process)
-        
+
         if total_files == 0:
             logger.warning("No files to process")
             return self._create_empty_index()
-        
+
         logger.info(f"Processing {total_files} files...")
-        
+
         if parallel and total_files > 1:
             # Use ThreadPoolExecutor for I/O-bound file reading
             # ProcessPoolExecutor has issues with strategy sharing
             if max_workers is None:
                 max_workers = min(os.cpu_count() or 4, total_files)
-            
+
             logger.info(f"Using parallel processing with {max_workers} workers")
-            
+
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
                 # Submit all tasks
                 future_to_file = {
                     executor.submit(self._process_file, file_path, specialized_extensions): file_path
                     for file_path in files_to_process
                 }
-                
+
                 # Process completed tasks
                 processed = 0
                 for future in as_completed(future_to_file):
                     file_path = future_to_file[future]
                     result = future.result()
-                    
+
                     if result:
                         symbols, file_info_dict, language, is_specialized = result
                         all_symbols.update(symbols)
                         all_files.update(file_info_dict)
                         languages.add(language)
-                        
+
                         if is_specialized:
                             specialized_count += 1
                         else:
                             fallback_count += 1
-                    
+
                     processed += 1
                     if processed % 100 == 0:
                         logger.debug(f"Processed {processed}/{total_files} files")
@@ -184,7 +184,7 @@ class JSONIndexBuilder:
                     all_symbols.update(symbols)
                     all_files.update(file_info_dict)
                     languages.add(language)
-                    
+
                     if is_specialized:
                         specialized_count += 1
                     else:
@@ -218,7 +218,7 @@ class JSONIndexBuilder:
         logger.info(f"Strategy usage: {specialized_count} specialized, {fallback_count} fallback")
 
         return index
-    
+
     def _create_empty_index(self) -> Dict[str, Any]:
         """Create an empty index structure."""
         metadata = IndexMetadata(
@@ -231,7 +231,7 @@ class JSONIndexBuilder:
             specialized_parsers=0,
             fallback_files=0
         )
-        
+
         return {
             "metadata": asdict(metadata),
             "symbols": {},
@@ -371,16 +371,16 @@ class JSONIndexBuilder:
             # Work directly with global symbols for this file
             global_symbols = self.in_memory_index.get("symbols", {})
             result = []
-            
+
             # Find all symbols for this file directly from global symbols
             for symbol_id, symbol_data in global_symbols.items():
                 symbol_file = symbol_data.get("file", "").replace("\\", "/")
-                
+
                 # Check if this symbol belongs to our file
                 if symbol_file == file_path:
                     symbol_type = symbol_data.get("type", "unknown")
                     symbol_name = symbol_id.split("::")[-1]  # Extract symbol name from ID
-                    
+
                     # Create symbol info
                     symbol_info = {
                         "name": symbol_name,
@@ -388,7 +388,7 @@ class JSONIndexBuilder:
                         "line": symbol_data.get("line"),
                         "signature": symbol_data.get("signature")
                     }
-                    
+
                     # Categorize by type
                     if symbol_type in ["function", "method"]:
                         result.append(symbol_info)
@@ -397,7 +397,7 @@ class JSONIndexBuilder:
 
             # Sort by line number for consistent ordering
             result.sort(key=lambda x: x.get("line", 0))
-            
+
             return result
 
         except Exception as e:

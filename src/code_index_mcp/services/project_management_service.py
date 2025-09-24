@@ -47,7 +47,7 @@ class ProjectManagementService(BaseService):
         # Import FileWatcherTool locally to avoid circular import
         from ..tools.monitoring import FileWatcherTool
         self._watcher_tool = FileWatcherTool(ctx)
-        
+
 
     @contextmanager
     def _noop_operation(self, *_args, **_kwargs):
@@ -106,7 +106,7 @@ class ProjectManagementService(BaseService):
         """
         # Business step 1: Initialize config tool
         self._config_tool.initialize_settings(path)
-        
+
         # Normalize path for consistent processing
         normalized_path = self._config_tool.normalize_project_path(path)
 
@@ -217,7 +217,7 @@ class ProjectManagementService(BaseService):
         Returns:
             Dictionary with loading results
         """
-        
+
 
         # Note: Legacy index loading is now handled by UnifiedIndexManager
         # This method is kept for backward compatibility but functionality moved
@@ -225,7 +225,7 @@ class ProjectManagementService(BaseService):
         # Extract file count from metadata
         file_count = index_data.get('project_metadata', {}).get('total_files', 0)
 
-        
+
 
         return {
             'file_count': file_count,
@@ -243,7 +243,7 @@ class ProjectManagementService(BaseService):
         Returns:
             String describing monitoring setup result
         """
-        
+
 
         try:
             # Create rebuild callback that uses the JSON index manager
@@ -285,7 +285,7 @@ class ProjectManagementService(BaseService):
 
     def _update_project_state(self, project_path: str, file_count: int) -> None:
         """Business logic to update system state after project initialization."""
-        
+
 
         # Update context with file count
         self.helper.update_file_count(file_count)

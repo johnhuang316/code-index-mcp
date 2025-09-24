@@ -32,13 +32,13 @@ class TypeScriptParsingStrategy(ParsingStrategy):
         classes = []
         imports = []
         exports = []
-        
+
         # Symbol lookup index for O(1) access
         symbol_lookup = {}  # name -> symbol_id mapping
 
         parser = tree_sitter.Parser(self.ts_language)
         tree = parser.parse(content.encode('utf8'))
-        
+
         # Single-pass traversal that handles everything
         context = TraversalContext(
             content=content,
@@ -50,7 +50,7 @@ class TypeScriptParsingStrategy(ParsingStrategy):
             exports=exports,
             symbol_lookup=symbol_lookup
         )
-        
+
         self._traverse_node_single_pass(tree.root_node, context)
 
         file_info = FileInfo(
@@ -67,7 +67,7 @@ class TypeScriptParsingStrategy(ParsingStrategy):
                                   current_function: Optional[str] = None,
                                   current_class: Optional[str] = None):
         """Single-pass traversal that extracts symbols and analyzes calls."""
-        
+
         # Handle function declarations
         if node.type == 'function_declaration':
             name = self._get_function_name(node, context.content)
@@ -83,11 +83,11 @@ class TypeScriptParsingStrategy(ParsingStrategy):
                 context.symbols[symbol_id] = symbol_info
                 context.symbol_lookup[name] = symbol_id
                 context.functions.append(name)
-                
+
                 # Traverse function body with updated context
                 func_context = f"{context.file_path}::{name}"
                 for child in node.children:
-                    self._traverse_node_single_pass(child, context, current_function=func_context, 
+                    self._traverse_node_single_pass(child, context, current_function=func_context,
                                                    current_class=current_class)
                 return
 
@@ -104,7 +104,7 @@ class TypeScriptParsingStrategy(ParsingStrategy):
                 context.symbols[symbol_id] = symbol_info
                 context.symbol_lookup[name] = symbol_id
                 context.classes.append(name)
-                
+
                 # Traverse class body with updated context
                 for child in node.children:
                     self._traverse_node_single_pass(child, context, current_function=current_function,
@@ -124,7 +124,7 @@ class TypeScriptParsingStrategy(ParsingStrategy):
                 context.symbols[symbol_id] = symbol_info
                 context.symbol_lookup[name] = symbol_id
                 context.classes.append(name)  # Group interfaces with classes
-                
+
                 # Traverse interface body with updated context
                 for child in node.children:
                     self._traverse_node_single_pass(child, context, current_function=current_function,
@@ -148,7 +148,7 @@ class TypeScriptParsingStrategy(ParsingStrategy):
                 context.symbol_lookup[full_name] = symbol_id
                 context.symbol_lookup[method_name] = symbol_id  # Also index by method name alone
                 context.functions.append(full_name)
-                
+
                 # Traverse method body with updated context
                 method_context = f"{context.file_path}::{full_name}"
                 for child in node.children:
@@ -238,7 +238,7 @@ class TypeScriptParsingStrategy(ParsingStrategy):
 
 class TraversalContext:
     """Context object to pass state during single-pass traversal."""
-    
+
     def __init__(self, content: str, file_path: str, symbols: Dict,
                  functions: List, classes: List, imports: List, exports: List, symbol_lookup: Dict):
         self.content = content
