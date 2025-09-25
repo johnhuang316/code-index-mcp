@@ -5,7 +5,8 @@ Shared constants for the Code Index MCP server.
 # Directory and file names
 SETTINGS_DIR = "code_indexer"
 CONFIG_FILE = "config.json"
-INDEX_FILE = "index.json"  # JSON index file
+INDEX_FILE = "index.json"  # JSON index file (deep index)
+INDEX_FILE_SHALLOW = "index.shallow.json"  # Minimal shallow index (file list)
 
 # Supported file extensions for code analysis
 # This is the authoritative list used by both old and new indexing systems

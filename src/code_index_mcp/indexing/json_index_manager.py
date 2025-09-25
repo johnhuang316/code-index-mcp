@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Any
 
 from .json_index_builder import JSONIndexBuilder
-from ..constants import SETTINGS_DIR, INDEX_FILE
+from ..constants import SETTINGS_DIR, INDEX_FILE, INDEX_FILE_SHALLOW
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +29,8 @@ class JSONIndexManager:
         self.index_builder: Optional[JSONIndexBuilder] = None
         self.temp_dir: Optional[str] = None
         self.index_path: Optional[str] = None
+        self.shallow_index_path: Optional[str] = None
+        self._shallow_file_list: Optional[List[str]] = None
         self._lock = threading.RLock()
         logger.info("Initialized JSON Index Manager")
 
@@ -59,6 +61,7 @@ class JSONIndexManager:
                 os.makedirs(self.temp_dir, exist_ok=True)
 
                 self.index_path = os.path.join(self.temp_dir, INDEX_FILE)
+                self.shallow_index_path = os.path.join(self.temp_dir, INDEX_FILE_SHALLOW)
 
                 logger.info(f"Set project path: {project_path}")
                 logger.info(f"Index storage: {self.index_path}")
@@ -114,6 +117,52 @@ class JSONIndexManager:
                 logger.error(f"Failed to load index: {e}")
                 return False
 
+    def build_shallow_index(self) -> bool:
+        """Build and save the minimal shallow index (file list)."""
+        with self._lock:
+            if not self.index_builder or not self.project_path or not self.shallow_index_path:
+                logger.error("Index builder not initialized for shallow index")
+                return False
+
+            try:
+                file_list = self.index_builder.build_shallow_file_list()
+                # Persist as a JSON array for minimal overhead
+                with open(self.shallow_index_path, 'w', encoding='utf-8') as f:
+                    json.dump(file_list, f, ensure_ascii=False)
+                self._shallow_file_list = file_list
+                logger.info(f"Saved shallow index with {len(file_list)} files to {self.shallow_index_path}")
+                return True
+            except Exception as e:
+                logger.error(f"Failed to build shallow index: {e}")
+                return False
+
+    def load_shallow_index(self) -> bool:
+        """Load shallow index (file list) from disk into memory."""
+        with self._lock:
+            try:
+                if not self.shallow_index_path or not os.path.exists(self.shallow_index_path):
+                    logger.warning("No existing shallow index found")
+                    return False
+                with open(self.shallow_index_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    if not isinstance(data, list):
+                        logger.error("Shallow index format invalid (expected list)")
+                        return False
+                    # Normalize paths
+                    normalized = []
+                    for p in data:
+                        if isinstance(p, str):
+                            q = p.replace('\\\\', '/').replace('\\', '/')
+                            if q.startswith('./'):
+                                q = q[2:]
+                            normalized.append(q)
+                    self._shallow_file_list = normalized
+                    logger.info(f"Loaded shallow index with {len(normalized)} files")
+                    return True
+            except Exception as e:
+                logger.error(f"Failed to load shallow index: {e}")
+                return False
+
     def refresh_index(self) -> bool:
         """Refresh the index (rebuild and reload)."""
         with self._lock:
@@ -135,8 +184,16 @@ class JSONIndexManager:
                 pattern = "*"
 
             if not self.index_builder or not self.index_builder.in_memory_index:
-                logger.warning("Index not loaded")
-                return []
+                # Fall back to shallow index if available
+                if self._shallow_file_list is None:
+                    self.load_shallow_index()
+                if not self._shallow_file_list:
+                    logger.warning("Index not loaded and no shallow index available")
+                    return []
+                files = list(self._shallow_file_list)
+                if pattern == "*":
+                    return files
+                return [f for f in files if fnmatch.fnmatch(f, pattern)]
 
             try:
                 files = list(self.index_builder.in_memory_index["files"].keys())
@@ -364,4 +421,3 @@ _index_manager = JSONIndexManager()
 def get_index_manager() -> JSONIndexManager:
     """Get the global index manager instance."""
     return _index_manager
-    
