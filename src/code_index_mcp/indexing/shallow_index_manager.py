@@ -15,6 +15,7 @@ import os
 import tempfile
 import threading
 from typing import List, Optional
+import re
 
 from .json_index_builder import JSONIndexBuilder
 from ..constants import SETTINGS_DIR, INDEX_FILE_SHALLOW
@@ -103,14 +104,37 @@ class ShallowIndexManager:
 
     def find_files(self, pattern: str = "*") -> List[str]:
         with self._lock:
-            import fnmatch
             if not isinstance(pattern, str):
                 return []
-            pattern = pattern.strip() or "*"
+            norm = (pattern.strip() or "*").replace('\\\\','/').replace('\\','/')
+            regex = self._compile_glob_regex(norm)
             files = self._file_list or []
-            if pattern == "*":
+            if norm == "*":
                 return list(files)
-            return [f for f in files if fnmatch.fnmatch(f, pattern)]
+            return [f for f in files if regex.match(f) is not None]
+
+    @staticmethod
+    def _compile_glob_regex(pattern: str) -> re.Pattern:
+        i = 0
+        out = []
+        special = ".^$+{}[]|()"
+        while i < len(pattern):
+            c = pattern[i]
+            if c == '*':
+                if i + 1 < len(pattern) and pattern[i + 1] == '*':
+                    out.append('.*')
+                    i += 2
+                    continue
+                else:
+                    out.append('[^/]*')
+            elif c == '?':
+                out.append('[^/]')
+            elif c in special:
+                out.append('\\' + c)
+            else:
+                out.append(c)
+            i += 1
+        return re.compile('^' + ''.join(out) + '$')
 
     def cleanup(self) -> None:
         with self._lock:

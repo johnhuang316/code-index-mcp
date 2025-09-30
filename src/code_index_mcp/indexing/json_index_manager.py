@@ -9,6 +9,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import tempfile
 import threading
 import fnmatch
@@ -172,7 +173,14 @@ class JSONIndexManager:
             return False
 
     def find_files(self, pattern: str = "*") -> List[str]:
-        """Find files matching a pattern."""
+        """
+        Find files matching a glob pattern using the SHALLOW file list only.
+
+        Notes:
+            - '*' does not cross '/'
+            - '**' matches across directories
+            - Always sources from the shallow index for consistency and speed
+        """
         with self._lock:
             # Input validation
             if not isinstance(pattern, str):
@@ -183,26 +191,27 @@ class JSONIndexManager:
             if not pattern:
                 pattern = "*"
 
-            if not self.index_builder or not self.index_builder.in_memory_index:
-                # Fall back to shallow index if available
-                if self._shallow_file_list is None:
-                    self.load_shallow_index()
-                if not self._shallow_file_list:
-                    logger.warning("Index not loaded and no shallow index available")
-                    return []
-                files = list(self._shallow_file_list)
-                if pattern == "*":
-                    return files
-                return [f for f in files if fnmatch.fnmatch(f, pattern)]
+            # Normalize to forward slashes
+            norm_pattern = pattern.replace('\\\\', '/').replace('\\', '/')
 
+            # Build glob regex: '*' does not cross '/', '**' crosses directories
+            regex = self._compile_glob_regex(norm_pattern)
+
+            # Always use shallow index for file discovery
             try:
-                files = list(self.index_builder.in_memory_index["files"].keys())
+                if self._shallow_file_list is None:
+                    # Try load existing shallow index; if missing, build then load
+                    if not self.load_shallow_index():
+                        # If still not available, attempt to build
+                        if self.build_shallow_index():
+                            self.load_shallow_index()
 
-                if pattern == "*":
+                files = list(self._shallow_file_list or [])
+
+                if norm_pattern == "*":
                     return files
 
-                # Simple pattern matching
-                return [f for f in files if fnmatch.fnmatch(f, pattern)]
+                return [f for f in files if regex.match(f) is not None]
 
             except Exception as e:
                 logger.error(f"Error finding files: {e}")
@@ -412,6 +421,39 @@ class JSONIndexManager:
             self.temp_dir = None
             self.index_path = None
             logger.info("Cleaned up JSON Index Manager")
+
+    @staticmethod
+    def _compile_glob_regex(pattern: str) -> re.Pattern:
+        """
+        Compile a glob pattern where '*' does not match '/', and '**' matches across directories.
+
+        Examples:
+            src/*.py  -> direct children .py under src
+            **/*.py   -> .py at any depth
+        """
+        # Translate glob to regex
+        i = 0
+        out = []
+        special = ".^$+{}[]|()"
+        while i < len(pattern):
+            c = pattern[i]
+            if c == '*':
+                if i + 1 < len(pattern) and pattern[i + 1] == '*':
+                    # '**' -> match across directories
+                    out.append('.*')
+                    i += 2
+                    continue
+                else:
+                    out.append('[^/]*')
+            elif c == '?':
+                out.append('[^/]')
+            elif c in special:
+                out.append('\\' + c)
+            else:
+                out.append(c)
+            i += 1
+        regex_str = '^' + ''.join(out) + '$'
+        return re.compile(regex_str)
 
 
 # Global instance
