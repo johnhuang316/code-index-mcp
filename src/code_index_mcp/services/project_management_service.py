@@ -13,7 +13,7 @@ from contextlib import contextmanager
 from .base_service import BaseService
 from ..utils.response_formatter import ResponseFormatter
 from ..constants import SUPPORTED_EXTENSIONS
-from ..indexing import get_index_manager
+from ..indexing import get_index_manager, get_shallow_index_manager
 
 logger = logging.getLogger(__name__)
 
@@ -40,8 +40,10 @@ class ProjectManagementService(BaseService):
 
     def __init__(self, ctx):
         super().__init__(ctx)
-        # Use the global singleton index manager
+        # Deep index manager (legacy full index)
         self._index_manager = get_index_manager()
+        # Shallow index manager (default for initialization)
+        self._shallow_manager = get_shallow_index_manager()
         from ..tools.config import ProjectConfigTool
         self._config_tool = ProjectConfigTool()
         # Import FileWatcherTool locally to avoid circular import
@@ -113,8 +115,8 @@ class ProjectManagementService(BaseService):
         # Business step 2: Cleanup existing project state
         self._cleanup_existing_project()
 
-        # Business step 3: Initialize JSON index manager
-        index_result = self._initialize_json_index_manager(normalized_path)
+        # Business step 3: Initialize shallow index by default (fast path)
+        index_result = self._initialize_shallow_index_manager(normalized_path)
 
         # Business step 3.1: Store index manager in context for other services
         self.helper.update_index_manager(self._index_manager)
@@ -185,6 +187,45 @@ class ProjectManagementService(BaseService):
             'languages': stats.get('languages', [])
         }
 
+    def _initialize_shallow_index_manager(self, project_path: str) -> Dict[str, Any]:
+        """
+        Business logic to initialize the shallow index manager by default.
+
+        Args:
+            project_path: Project path
+
+        Returns:
+            Dictionary with initialization results
+        """
+        # Set project path in shallow manager
+        if not self._shallow_manager.set_project_path(project_path):
+            raise RuntimeError(f"Failed to set project path (shallow): {project_path}")
+
+        # Update context
+        self.helper.update_base_path(project_path)
+
+        # Try to load existing shallow index or build new one
+        if self._shallow_manager.load_index():
+            source = "loaded_existing"
+        else:
+            if not self._shallow_manager.build_index():
+                raise RuntimeError("Failed to build shallow index")
+            source = "built_new"
+
+        # Determine file count from shallow list
+        try:
+            files = self._shallow_manager.get_file_list()
+            file_count = len(files)
+        except Exception:  # noqa: BLE001 - safe fallback
+            file_count = 0
+
+        return {
+            'file_count': file_count,
+            'source': source,
+            'total_symbols': 0,
+            'languages': []
+        }
+
 
     def _is_valid_existing_index(self, index_data: Dict[str, Any]) -> bool:
         """
@@ -250,15 +291,23 @@ class ProjectManagementService(BaseService):
             def rebuild_callback():
                 logger.info("File watcher triggered rebuild callback")
                 try:
-                    logger.debug(f"Starting index rebuild for: {project_path}")
-                    # Business logic: File changed, rebuild using JSON index manager
-                    if self._index_manager.refresh_index():
-                        stats = self._index_manager.get_index_stats()
-                        file_count = stats.get('indexed_files', 0)
-                        logger.info(f"File watcher rebuild completed successfully - indexed {file_count} files")
-                        return True
-                    else:
-                        logger.warning("File watcher rebuild failed")
+                    logger.debug(f"Starting shallow index rebuild for: {project_path}")
+                    # Business logic: File changed, rebuild using SHALLOW index manager
+                    try:
+                        if not self._shallow_manager.set_project_path(project_path):
+                            logger.warning("Shallow manager set_project_path failed")
+                            return False
+                        if self._shallow_manager.build_index():
+                            files = self._shallow_manager.get_file_list()
+                            logger.info(f"File watcher shallow rebuild completed successfully - files {len(files)}")
+                            return True
+                        else:
+                            logger.warning("File watcher shallow rebuild failed")
+                            return False
+                    except Exception as e:
+                        import traceback
+                        logger.error(f"File watcher shallow rebuild failed: {e}")
+                        logger.error(f"Traceback: {traceback.format_exc()}")
                         return False
                 except Exception as e:
                     import traceback

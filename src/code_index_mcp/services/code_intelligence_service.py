@@ -9,11 +9,11 @@ import logging
 import os
 from typing import Dict, Any
 
-logger = logging.getLogger(__name__)
-
 from .base_service import BaseService
 from ..tools.filesystem import FileSystemTool
 from ..indexing import get_index_manager
+
+logger = logging.getLogger(__name__)
 
 
 class CodeIntelligenceService(BaseService):
@@ -61,9 +61,14 @@ class CodeIntelligenceService(BaseService):
         # Get file summary from JSON index
         summary = index_manager.get_file_summary(file_path)
         logger.info(f"Summary result: {summary is not None}")
-        
+
+        # If deep index isn't available yet, return a helpful hint instead of error
         if not summary:
-            raise ValueError(f"File not found in index: {file_path}")
+            return {
+                "status": "needs_deep_index",
+                "message": "Deep index not available. Please run build_deep_index before calling get_file_summary.",
+                "file_path": file_path
+            }
 
         return summary
 

@@ -274,6 +274,31 @@ class JSONIndexBuilder:
         logger.debug(f"Found {len(supported_files)} supported files")
         return supported_files
 
+    def build_shallow_file_list(self) -> List[str]:
+        """
+        Build a minimal shallow index consisting of relative file paths only.
+
+        This method does not read file contents. It enumerates supported files
+        using centralized filtering and returns normalized relative paths with
+        forward slashes for cross-platform consistency.
+
+        Returns:
+            List of relative file paths (using '/').
+        """
+        try:
+            absolute_files = self._get_supported_files()
+            result: List[str] = []
+            for abs_path in absolute_files:
+                rel_path = os.path.relpath(abs_path, self.project_path).replace('\\', '/')
+                # Normalize leading './'
+                if rel_path.startswith('./'):
+                    rel_path = rel_path[2:]
+                result.append(rel_path)
+            return result
+        except Exception as e:
+            logger.error(f"Failed to build shallow file list: {e}")
+            return []
+
     def save_index(self, index: Dict[str, Any], index_path: str) -> bool:
         """
         Save index to disk.

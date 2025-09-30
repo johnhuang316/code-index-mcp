@@ -6,6 +6,8 @@ and index-related operations using the new JSON-based indexing system.
 """
 import time
 import logging
+import os
+import json
 
 from typing import Dict, Any
 from dataclasses import dataclass
@@ -13,7 +15,7 @@ from dataclasses import dataclass
 logger = logging.getLogger(__name__)
 
 from .base_service import BaseService
-from ..indexing import get_index_manager
+from ..indexing import get_index_manager, get_shallow_index_manager, DeepIndexManager
 
 
 @dataclass
@@ -35,11 +37,18 @@ class IndexManagementService(BaseService):
 
     def __init__(self, ctx):
         super().__init__(ctx)
+        # Deep manager (symbols/files, legacy JSON index manager)
         self._index_manager = get_index_manager()
+        # Shallow manager (file-list only) for default workflows
+        self._shallow_manager = get_shallow_index_manager()
+        # Optional wrapper for explicit deep builds
+        self._deep_wrapper = DeepIndexManager()
 
     def rebuild_index(self) -> str:
         """
-        Rebuild the project index using the new JSON indexing system.
+        Rebuild the project index (DEFAULT: shallow file list).
+
+        For deep/symbol rebuilds, use build_deep_index() tool instead.
 
         Returns:
             Success message with rebuild information
@@ -50,11 +59,17 @@ class IndexManagementService(BaseService):
         # Business validation
         self._validate_rebuild_request()
 
-        # Business workflow: Execute rebuild
-        result = self._execute_rebuild_workflow()
+        # Shallow rebuild only (fast path)
+        if not self._shallow_manager.set_project_path(self.base_path):
+            raise RuntimeError("Failed to set project path (shallow) in index manager")
+        if not self._shallow_manager.build_index():
+            raise RuntimeError("Failed to rebuild shallow index")
 
-        # Business result formatting
-        return self._format_rebuild_result(result)
+        try:
+            count = len(self._shallow_manager.get_file_list())
+        except Exception:
+            count = 0
+        return f"Shallow index re-built with {count} files."
 
     def get_rebuild_status(self) -> Dict[str, Any]:
         """
@@ -137,3 +152,47 @@ class IndexManagementService(BaseService):
             Formatted result string for MCP response
         """
         return f"Project re-indexed. Found {result.file_count} files."
+
+    def build_shallow_index(self) -> str:
+        """
+        Build and persist the shallow index (file list only).
+
+        Returns:
+            Success message including file count if available.
+
+        Raises:
+            ValueError/RuntimeError on validation or build failure
+        """
+        # Ensure project is set up
+        self._require_project_setup()
+
+        # Initialize manager with current base path
+        if not self._shallow_manager.set_project_path(self.base_path):
+            raise RuntimeError("Failed to set project path in index manager")
+
+        # Build shallow index
+        if not self._shallow_manager.build_index():
+            raise RuntimeError("Failed to build shallow index")
+
+        # Try to report count
+        count = 0
+        try:
+            shallow_path = getattr(self._shallow_manager, 'index_path', None)
+            if shallow_path and os.path.exists(shallow_path):
+                with open(shallow_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    if isinstance(data, list):
+                        count = len(data)
+        except Exception as e:  # noqa: BLE001 - safe fallback to zero
+            logger.debug(f"Unable to read shallow index count: {e}")
+
+        return f"Shallow index built{f' with {count} files' if count else ''}."
+
+    def rebuild_deep_index(self) -> str:
+        """Rebuild the deep index using the original workflow."""
+        # Business validation
+        self._validate_rebuild_request()
+
+        # Deep rebuild via existing workflow
+        result = self._execute_rebuild_workflow()
+        return self._format_rebuild_result(result)

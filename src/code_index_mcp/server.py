@@ -13,7 +13,7 @@ import sys
 import logging
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import AsyncIterator, Dict, Any, Optional, List
+from typing import AsyncIterator, Dict, Any, List
 
 # Third-party imports
 from mcp import types
@@ -60,7 +60,6 @@ class CodeIndexerContext:
     base_path: str
     settings: ProjectSettings
     file_count: int = 0
-    index_manager: Optional['UnifiedIndexManager'] = None
     file_watcher_service: FileWatcherService = None
 
 @asynccontextmanager
@@ -244,6 +243,16 @@ def refresh_index(ctx: Context) -> str:
         Success message with total file count
     """
     return IndexManagementService(ctx).rebuild_index()
+
+@mcp.tool()
+@handle_mcp_tool_errors(return_type='str')
+def build_deep_index(ctx: Context) -> str:
+    """
+    Build the deep index (full symbol extraction) for the current project.
+
+    This performs a complete re-index and loads it into memory.
+    """
+    return IndexManagementService(ctx).rebuild_deep_index()
 
 @mcp.tool()
 @handle_mcp_tool_errors(return_type='dict')
