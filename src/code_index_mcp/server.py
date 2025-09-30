@@ -16,7 +16,6 @@ from dataclasses import dataclass
 from typing import AsyncIterator, Dict, Any, List
 
 # Third-party imports
-from mcp import types
 from mcp.server.fastmcp import FastMCP, Context
 
 # Local imports
@@ -106,13 +105,7 @@ def get_file_content(file_path: str) -> str:
     # Use FileService for simple file reading - this is appropriate for a resource
     return FileService(ctx).get_file_content(file_path)
 
-@mcp.resource("structure://project")
-@handle_mcp_resource_errors
-def get_project_structure() -> str:
-    """Get the structure of the project as a JSON tree."""
-    ctx = mcp.get_context()
-    return ProjectManagementService(ctx).get_project_structure()
-
+# Removed: structure://project resource - not necessary for most workflows
 # Removed: settings://stats resource - this information is available via get_settings_info() tool
 # and is more of a debugging/technical detail rather than context AI needs
 
@@ -305,62 +298,7 @@ def configure_file_watcher(
     return SystemManagementService(ctx).configure_file_watcher(enabled, debounce_seconds, additional_exclude_patterns)
 
 # ----- PROMPTS -----
-
-@mcp.prompt()
-def analyze_code(file_path: str = "", query: str = "") -> list[types.PromptMessage]:
-    """Prompt for analyzing code in the project."""
-    messages = [
-        types.PromptMessage(role="user", content=types.TextContent(type="text", text=f"""I need you to analyze some code from my project.
-
-{f'Please analyze the file: {file_path}' if file_path else ''}
-{f'I want to understand: {query}' if query else ''}
-
-First, let me give you some context about the project structure. Then, I'll provide the code to analyze.
-""")),
-        types.PromptMessage(
-            role="assistant",
-            content=types.TextContent(
-                type="text",
-                text="I'll help you analyze the code. Let me first examine the project structure to get a better understanding of the codebase."
-            )
-        )
-    ]
-    return messages
-
-@mcp.prompt()
-def code_search(query: str = "") -> types.TextContent:
-    """Prompt for searching code in the project."""
-    search_text = "\"query\"" if not query else f"\"{query}\""
-    return types.TextContent(
-        type="text",
-        text=f"""I need to search through my codebase for {search_text}.
-
-Please help me find all occurrences of this query and explain what each match means in its context.
-Focus on the most relevant files and provide a brief explanation of how each match is used in the code.
-
-If there are too many results, prioritize the most important ones and summarize the patterns you see."""
-    )
-
-@mcp.prompt()
-def set_project() -> list[types.PromptMessage]:
-    """Prompt for setting the project path."""
-    messages = [
-        types.PromptMessage(role="user", content=types.TextContent(type="text", text="""
-        I need to analyze code from a project, but I haven't set the project path yet. Please help me set up the project path and index the code.
-
-        First, I need to specify which project directory to analyze.
-        """)),
-        types.PromptMessage(role="assistant", content=types.TextContent(type="text", text="""
-        Before I can help you analyze any code, we need to set up the project path. This is a required first step.
-
-        Please provide the full path to your project folder. For example:
-        - Windows: "C:/Users/username/projects/my-project"
-        - macOS/Linux: "/home/username/projects/my-project"
-
-        Once you provide the path, I'll use the `set_project_path` tool to configure the code analyzer to work with your project.
-        """))
-    ]
-    return messages
+# Removed: analyze_code, code_search, set_project prompts
 
 def main():
     """Main function to run the MCP server."""

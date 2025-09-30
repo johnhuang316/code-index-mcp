@@ -4,7 +4,6 @@ Project Management Service - Business logic for project lifecycle management.
 This service handles the business logic for project initialization, configuration,
 and lifecycle management using the new JSON-based indexing system.
 """
-import json
 import logging
 from typing import Dict, Any
 from dataclasses import dataclass
@@ -409,39 +408,4 @@ class ProjectManagementService(BaseService):
 
         return ResponseFormatter.config_response(config_data)
 
-    def get_project_structure(self) -> str:
-        """
-        Get the project directory structure for MCP resource.
-
-        Returns:
-            JSON formatted project structure
-        """
-
-        # Check if project is configured
-        if not self.helper.base_path:
-            structure_data = {
-                "status": "not_configured",
-                "message": ("Project path not set. Please use set_project_path "
-                           "to set a project directory first.")
-            }
-            return json.dumps(structure_data, indent=2)
-
-        # Check if we have index cache with directory tree
-        if (hasattr(self.ctx.request_context.lifespan_context, 'index_cache') and
-            self.ctx.request_context.lifespan_context.index_cache and
-            'directory_tree' in self.ctx.request_context.lifespan_context.index_cache):
-
-            directory_tree = self.ctx.request_context.lifespan_context.index_cache['directory_tree']
-            return json.dumps(directory_tree, indent=2)
-
-        # If no directory tree available, try to build basic structure
-        try:
-            # Use config tool to get basic project structure
-            basic_structure = self._config_tool.get_basic_project_structure(self.helper.base_path)
-            return json.dumps(basic_structure, indent=2)
-        except Exception as e:
-            error_data = {
-                "error": f"Unable to get project structure: {e}",
-                "status": "error"
-            }
-            return json.dumps(error_data, indent=2)
+    # Removed: get_project_structure; the project structure resource is deprecated
