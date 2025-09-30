@@ -9,7 +9,7 @@ from typing import Dict, Any, List, Optional
 from dataclasses import dataclass
 
 from .base_service import BaseService
-from ..indexing import get_index_manager
+from ..indexing import get_shallow_index_manager
 
 
 @dataclass
@@ -32,7 +32,7 @@ class FileDiscoveryService(BaseService):
 
     def __init__(self, ctx):
         super().__init__(ctx)
-        self._index_manager = get_index_manager()
+        self._index_manager = get_shallow_index_manager()
 
     def find_files(self, pattern: str, max_results: Optional[int] = None) -> List[str]:
         """

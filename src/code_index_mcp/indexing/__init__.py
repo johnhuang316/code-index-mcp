@@ -13,6 +13,8 @@ from .qualified_names import (
 # New JSON-based indexing system
 from .json_index_builder import JSONIndexBuilder, IndexMetadata
 from .json_index_manager import JSONIndexManager, get_index_manager
+from .shallow_index_manager import ShallowIndexManager, get_shallow_index_manager
+from .deep_index_manager import DeepIndexManager
 from .models import SymbolInfo, FileInfo
 
 __all__ = [
@@ -21,6 +23,9 @@ __all__ = [
     'JSONIndexBuilder',
     'JSONIndexManager',
     'get_index_manager',
+    'ShallowIndexManager',
+    'get_shallow_index_manager',
+    'DeepIndexManager',
     'SymbolInfo',
     'FileInfo', 
     'IndexMetadata'
