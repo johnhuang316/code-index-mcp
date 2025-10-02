@@ -48,4 +48,4 @@ COMMIT_MESSAGE.txt
 RELEASE_NOTE.txt
 
 .llm-context/
-.kiro/
+AGENTS.md
