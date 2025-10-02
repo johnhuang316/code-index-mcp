@@ -66,7 +66,7 @@ The easiest way to get started with any MCP-compatible application:
 - **Direct Tree-sitter Integration**: No regex fallbacks for specialized languages - fail fast with clear errors
 - **Advanced Search**: Auto-detects and uses the best available tool (ugrep, ripgrep, ag, or grep)
 - **Universal File Support**: Comprehensive coverage from advanced AST parsing to basic file indexing
-- **File Analysis**: Deep insights into structure, imports, classes, methods, and complexity metrics
+- **File Analysis**: Deep insights into structure, imports, classes, methods, and complexity metrics after running `build_deep_index`
 
 ### 🗂️ **Multi-Language Support**  
 - **7 Languages with Tree-sitter AST Parsing**: Python, JavaScript, TypeScript, Java, Go, Objective-C, Zig
@@ -81,7 +81,7 @@ The easiest way to get started with any MCP-compatible application:
 - **File Watcher**: Automatic index updates when files change
 - **Cross-platform**: Native OS file system monitoring
 - **Smart Processing**: Batches rapid changes to prevent excessive rebuilds
-- **Rich Metadata**: Captures symbols, references, definitions, and relationships
+- **Shallow Index Refresh**: Watches file changes and keeps the file list current; run a deep rebuild when you need symbol metadata
 
 ### ⚡ **Performance & Efficiency**
 - **Tree-sitter AST Parsing**: Native syntax parsing for accurate symbol extraction
@@ -218,15 +218,18 @@ Then configure:
 | Tool | Description |
 |------|-------------|
 | **`set_project_path`** | Initialize indexing for a project directory |
-| **`refresh_index`** | Rebuild the project index after file changes |
+| **`refresh_index`** | Rebuild the shallow file index after file changes |
+| **`build_deep_index`** | Generate the full symbol index used by deep analysis |
 | **`get_settings_info`** | View current project configuration and status |
+
+*Run `build_deep_index` when you need symbol-level data; the default shallow index powers quick file discovery.*
 
 ### 🔍 **Search & Discovery**
 | Tool | Description |
 |------|-------------|
 | **`search_code_advanced`** | Smart search with regex, fuzzy matching, and file filtering |
 | **`find_files`** | Locate files using glob patterns (e.g., `**/*.py`) |
-| **`get_file_summary`** | Analyze file structure, functions, imports, and complexity |
+| **`get_file_summary`** | Analyze file structure, functions, imports, and complexity (requires deep index) |
 
 ### 🔄 **Monitoring & Auto-refresh**
 | Tool | Description |
@@ -263,6 +266,7 @@ Find all TypeScript component files in src/components
 Give me a summary of src/api/userService.ts
 ```
 *Uses: `get_file_summary` to show functions, imports, and complexity*
+*Tip: run `build_deep_index` first if you get a `needs_deep_index` response.*
 
 ### 🔍 **Advanced Search Examples**
 
