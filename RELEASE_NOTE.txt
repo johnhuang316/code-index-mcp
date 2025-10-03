@@ -5,7 +5,3 @@
 - CLI search strategies emit the appropriate exclusion flags automatically (ripgrep, ugrep, ag, grep).
 - Basic fallback search prunes excluded directories during traversal, avoiding unnecessary IO.
 - Added regression coverage for the new filtering behaviour (`tests/search/test_search_filters.py`).
-
-### Upgrade Notes
-- No new dependencies; update via standard `uv sync` after pulling.
-- Run `uv run pytest` to confirm the new search filter tests on your environment.
