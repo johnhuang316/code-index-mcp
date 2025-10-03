@@ -95,6 +95,26 @@ class AgStrategy(SearchStrategy):
             
             cmd.extend(['-G', regex_pattern])
 
+        processed_patterns = set()
+        exclude_dirs = getattr(self, 'exclude_dirs', [])
+        exclude_file_patterns = getattr(self, 'exclude_file_patterns', [])
+
+        for directory in exclude_dirs:
+            normalized = directory.strip()
+            if not normalized or normalized in processed_patterns:
+                continue
+            cmd.extend(['--ignore', normalized])
+            processed_patterns.add(normalized)
+
+        for pattern in exclude_file_patterns:
+            normalized = pattern.strip()
+            if not normalized or normalized in processed_patterns:
+                continue
+            if normalized.startswith('!'):
+                normalized = normalized[1:]
+            cmd.extend(['--ignore', normalized])
+            processed_patterns.add(normalized)
+
         # Add -- to treat pattern as a literal argument, preventing injection
         cmd.append('--')
         cmd.append(search_pattern)

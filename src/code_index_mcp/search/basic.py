@@ -1,9 +1,10 @@
 """
 Basic, pure-Python search strategy.
 """
+import fnmatch
 import os
 import re
-import fnmatch
+from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from .base import SearchStrategy, create_word_boundary_pattern, is_safe_regex_pattern
@@ -83,33 +84,38 @@ class BasicSearchStrategy(SearchStrategy):
         except re.error as e:
             raise ValueError(f"Invalid regex pattern: {pattern}, error: {e}")
 
-        for root, _, files in os.walk(base_path):
+        file_filter = getattr(self, 'file_filter', None)
+        base = Path(base_path)
+
+        for root, dirs, files in os.walk(base_path):
+            if file_filter:
+                dirs[:] = [d for d in dirs if not file_filter.should_exclude_directory(d)]
+
             for file in files:
-                # Improved file pattern matching with glob support
                 if file_pattern and not self._matches_pattern(file, file_pattern):
                     continue
 
-                file_path = os.path.join(root, file)
+                file_path = Path(root) / file
+
+                if file_filter and not file_filter.should_process_path(file_path, base):
+                    continue
+
                 rel_path = os.path.relpath(file_path, base_path)
-                
+
                 try:
                     with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
                         for line_num, line in enumerate(f, 1):
                             if search_regex.search(line):
                                 content = line.rstrip('\n')
-                                # Truncate content if it exceeds max_line_length
                                 if max_line_length and len(content) > max_line_length:
                                     content = content[:max_line_length] + '... (truncated)'
-                                
+
                                 if rel_path not in results:
                                     results[rel_path] = []
-                                # Strip newline for consistent output
                                 results[rel_path].append((line_num, content))
                 except (UnicodeDecodeError, PermissionError, OSError):
-                    # Ignore files that can't be opened or read due to encoding/permission issues
                     continue
                 except Exception:
-                    # Ignore any other unexpected exceptions to maintain robustness
                     continue
         
         return results

@@ -69,6 +69,31 @@ class RipgrepStrategy(SearchStrategy):
         if file_pattern:
             cmd.extend(['--glob', file_pattern])
 
+        exclude_dirs = getattr(self, 'exclude_dirs', [])
+        exclude_file_patterns = getattr(self, 'exclude_file_patterns', [])
+
+        processed_patterns = set()
+
+        for directory in exclude_dirs:
+            normalized = directory.strip()
+            if not normalized or normalized in processed_patterns:
+                continue
+            cmd.extend(['--glob', f'!**/{normalized}/**'])
+            processed_patterns.add(normalized)
+
+        for pattern in exclude_file_patterns:
+            normalized = pattern.strip()
+            if not normalized or normalized in processed_patterns:
+                continue
+            if normalized.startswith('!'):
+                glob_pattern = normalized
+            elif any(ch in normalized for ch in '*?[') or '/' in normalized:
+                glob_pattern = f'!{normalized}'
+            else:
+                glob_pattern = f'!**/{normalized}'
+            cmd.extend(['--glob', glob_pattern])
+            processed_patterns.add(normalized)
+
         # Add -- to treat pattern as a literal argument, preventing injection
         cmd.append('--')
         cmd.append(search_pattern)

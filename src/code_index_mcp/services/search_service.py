@@ -5,24 +5,20 @@ This service handles code search operations, search tool management,
 and search strategy selection.
 """
 
-from typing import Dict, Any, Optional
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 from .base_service import BaseService
-from ..utils import ValidationHelper, ResponseFormatter
+from ..utils import FileFilter, ResponseFormatter, ValidationHelper
 from ..search.base import is_safe_regex_pattern
 
 
 class SearchService(BaseService):
-    """
-    Service for managing code search operations.
+    """Service for managing code search operations."""
 
-    This service handles:
-    - Code search with various parameters and options
-    - Search tool management and detection
-    - Search strategy selection and optimization
-    - Search capabilities reporting
-    """
-
+    def __init__(self, ctx):
+        super().__init__(ctx)
+        self.file_filter = self._create_file_filter()
 
     def search_code(  # pylint: disable=too-many-arguments
         self,
@@ -34,46 +30,21 @@ class SearchService(BaseService):
         regex: Optional[bool] = None,
         max_line_length: Optional[int] = None
     ) -> Dict[str, Any]:
-        """
-        Search for code patterns in the project.
-
-        Handles the logic for search_code_advanced MCP tool.
-
-        Args:
-            pattern: The search pattern
-            case_sensitive: Whether search should be case-sensitive
-            context_lines: Number of context lines to show
-            file_pattern: Glob pattern to filter files
-            fuzzy: Whether to enable fuzzy matching
-            regex: Regex mode - True/False to force, None for auto-detection
-            max_line_length: Optional. Default None (no limit). Limits the length of lines when context_lines is used.
-
-        Returns:
-            Dictionary with search results or error information
-
-        Raises:
-            ValueError: If project is not set up or search parameters are invalid
-        """
+        """Search for code patterns in the project."""
         self._require_project_setup()
 
-        # Smart regex detection if regex parameter is None
         if regex is None:
             regex = is_safe_regex_pattern(pattern)
-            if regex:
-                pass
 
-        # Validate search pattern
         error = ValidationHelper.validate_search_pattern(pattern, regex)
         if error:
             raise ValueError(error)
 
-        # Validate file pattern if provided
         if file_pattern:
             error = ValidationHelper.validate_glob_pattern(file_pattern)
             if error:
                 raise ValueError(f"Invalid file pattern: {error}")
 
-        # Get search strategy from settings
         if not self.settings:
             raise ValueError("Settings not available")
 
@@ -81,7 +52,7 @@ class SearchService(BaseService):
         if not strategy:
             raise ValueError("No search strategies available")
 
-
+        self._configure_strategy(strategy)
 
         try:
             results = strategy.search(
@@ -94,23 +65,13 @@ class SearchService(BaseService):
                 regex=regex,
                 max_line_length=max_line_length
             )
-            return ResponseFormatter.search_results_response(results)
-        except Exception as e:
-            raise ValueError(f"Search failed using '{strategy.name}': {e}") from e
-
+            filtered = self._filter_results(results)
+            return ResponseFormatter.search_results_response(filtered)
+        except Exception as exc:
+            raise ValueError(f"Search failed using '{strategy.name}': {exc}") from exc
 
     def refresh_search_tools(self) -> str:
-        """
-        Refresh the available search tools.
-
-        Handles the logic for refresh_search_tools MCP tool.
-
-        Returns:
-            Success message with available tools information
-
-        Raises:
-            ValueError: If refresh operation fails
-        """
+        """Refresh the available search tools."""
         if not self.settings:
             raise ValueError("Settings not available")
 
@@ -121,14 +82,8 @@ class SearchService(BaseService):
         preferred = config['preferred_tool']
         return f"Search tools refreshed. Available: {available}. Preferred: {preferred}."
 
-
     def get_search_capabilities(self) -> Dict[str, Any]:
-        """
-        Get information about search capabilities and available tools.
-
-        Returns:
-            Dictionary with search tool information and capabilities
-        """
+        """Get information about search capabilities and available tools."""
         if not self.settings:
             return {"error": "Settings not available"}
 
@@ -145,3 +100,73 @@ class SearchService(BaseService):
         }
 
         return capabilities
+
+    def _configure_strategy(self, strategy) -> None:
+        """Apply shared exclusion configuration to the strategy if supported."""
+        configure = getattr(strategy, 'configure_excludes', None)
+        if not configure:
+            return
+
+        try:
+            configure(self.file_filter)
+        except Exception:  # pragma: no cover - defensive fallback
+            pass
+
+    def _create_file_filter(self) -> FileFilter:
+        """Build a shared file filter drawing from project settings."""
+        additional_dirs: List[str] = []
+        additional_file_patterns: List[str] = []
+
+        settings = self.settings
+        if settings:
+            try:
+                config = settings.get_file_watcher_config()
+            except Exception:  # pragma: no cover - fallback if config fails
+                config = {}
+
+            for key in ('exclude_patterns', 'additional_exclude_patterns'):
+                patterns = config.get(key) or []
+                for pattern in patterns:
+                    if not isinstance(pattern, str):
+                        continue
+                    normalized = pattern.strip()
+                    if not normalized:
+                        continue
+                    additional_dirs.append(normalized)
+                    additional_file_patterns.append(normalized)
+
+        file_filter = FileFilter(additional_dirs or None)
+
+        if additional_file_patterns:
+            file_filter.exclude_files.update(additional_file_patterns)
+
+        return file_filter
+
+    def _filter_results(self, results: Dict[str, Any]) -> Dict[str, Any]:
+        """Filter out matches that reside under excluded paths."""
+        if not isinstance(results, dict) or not results:
+            return results
+
+        if 'error' in results or not self.file_filter or not self.base_path:
+            return results
+
+        base_path = Path(self.base_path)
+        filtered: Dict[str, Any] = {}
+
+        for rel_path, matches in results.items():
+            if not isinstance(rel_path, str):
+                continue
+
+            normalized = Path(rel_path.replace('\\', '/'))
+            try:
+                absolute = (base_path / normalized).resolve()
+            except Exception:  # pragma: no cover - invalid path safety
+                continue
+
+            try:
+                if self.file_filter.should_process_path(absolute, base_path):
+                    filtered[rel_path] = matches
+            except Exception:  # pragma: no cover - defensive fallback
+                continue
+
+        return filtered

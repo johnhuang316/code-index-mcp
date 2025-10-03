@@ -69,6 +69,30 @@ class UgrepStrategy(SearchStrategy):
         if file_pattern:
             cmd.extend(['--include', file_pattern])
 
+        processed_patterns = set()
+        exclude_dirs = getattr(self, 'exclude_dirs', [])
+        exclude_file_patterns = getattr(self, 'exclude_file_patterns', [])
+
+        for directory in exclude_dirs:
+            normalized = directory.strip()
+            if not normalized or normalized in processed_patterns:
+                continue
+            cmd.extend(['--ignore', f'**/{normalized}/**'])
+            processed_patterns.add(normalized)
+
+        for pattern in exclude_file_patterns:
+            normalized = pattern.strip()
+            if not normalized or normalized in processed_patterns:
+                continue
+            if normalized.startswith('!'):
+                ignore_pattern = normalized[1:]
+            elif any(ch in normalized for ch in '*?[') or '/' in normalized:
+                ignore_pattern = normalized
+            else:
+                ignore_pattern = f'**/{normalized}'
+            cmd.extend(['--ignore', ignore_pattern])
+            processed_patterns.add(normalized)
+
         # Add '--' to treat pattern as a literal argument, preventing injection
         cmd.append('--')
         cmd.append(pattern)

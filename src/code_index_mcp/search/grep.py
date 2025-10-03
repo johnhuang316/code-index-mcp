@@ -83,6 +83,27 @@ class GrepStrategy(SearchStrategy):
             # Note: grep's --include uses glob patterns, not regex
             cmd.append(f'--include={file_pattern}')
 
+        exclude_dirs = getattr(self, 'exclude_dirs', [])
+        exclude_file_patterns = getattr(self, 'exclude_file_patterns', [])
+
+        processed_dirs = set()
+        for directory in exclude_dirs:
+            normalized = directory.strip()
+            if not normalized or normalized in processed_dirs:
+                continue
+            cmd.append(f'--exclude-dir={normalized}')
+            processed_dirs.add(normalized)
+
+        processed_files = set()
+        for pattern in exclude_file_patterns:
+            normalized = pattern.strip()
+            if not normalized or normalized in processed_files:
+                continue
+            if normalized.startswith('!'):
+                normalized = normalized[1:]
+            cmd.append(f'--exclude={normalized}')
+            processed_files.add(normalized)
+
         # Add -- to treat pattern as a literal argument, preventing injection
         cmd.append('--')
         cmd.append(search_pattern)

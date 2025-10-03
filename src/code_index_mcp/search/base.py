@@ -10,9 +10,12 @@ import shutil
 import subprocess
 import sys
 from abc import ABC, abstractmethod
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
 
 from ..indexing.qualified_names import normalize_file_path
+
+if TYPE_CHECKING:  # pragma: no cover
+    from ..utils.file_filter import FileFilter
 
 def parse_search_output(
     output: str,
@@ -181,6 +184,16 @@ class SearchStrategy(ABC):
     
     Each strategy is responsible for searching code using a specific tool or method.
     """
+
+    def configure_excludes(self, file_filter: Optional['FileFilter']) -> None:
+        """Configure shared exclusion settings for the strategy."""
+        self.file_filter = file_filter
+        if file_filter:
+            self.exclude_dirs = sorted(set(file_filter.exclude_dirs))
+            self.exclude_file_patterns = sorted(set(file_filter.exclude_files))
+        else:
+            self.exclude_dirs = []
+            self.exclude_file_patterns = []
 
     @property
     @abstractmethod
