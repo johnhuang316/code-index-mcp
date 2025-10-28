@@ -43,6 +43,10 @@ class PythonParsingStrategy(ParsingStrategy):
             symbols={"functions": functions, "classes": classes},
             imports=imports
         )
+
+        pending_calls = visitor.resolve_deferred_calls()
+        if pending_calls:
+            file_info.pending_calls = pending_calls
         
         return symbols, file_info
 
@@ -61,12 +65,15 @@ class SinglePassVisitor(ast.NodeVisitor):
         # Context tracking for call analysis
         self.current_function_stack = []
         self.current_class = None
+        self.variable_type_stack: List[Dict[str, str]] = [{}]
         
         # Symbol lookup index for O(1) access
         self.symbol_lookup = {}  # name -> symbol_id mapping for fast lookups
         
         # Track processed nodes to avoid duplicates
         self.processed_nodes: Set[int] = set()
+        # Deferred call relationships for forward references
+        self.deferred_calls: List[Tuple[str, str]] = []
     
     def visit_ClassDef(self, node: ast.ClassDef):
         """Visit class definition - extract symbol and analyze in single pass."""
@@ -93,13 +100,18 @@ class SinglePassVisitor(ast.NodeVisitor):
         old_class = self.current_class
         self.current_class = class_name
         
-        # Process class body (including methods)
+        method_nodes: List[ast.FunctionDef] = []
+        # First pass: register methods so forward references resolve
         for child in node.body:
             if isinstance(child, ast.FunctionDef):
-                self._handle_method(child, class_name)
+                self._register_method(child, class_name)
+                method_nodes.append(child)
             else:
-                # Visit other nodes in class body
                 self.visit(child)
+
+        # Second pass: visit method bodies for call analysis
+        for method_node in method_nodes:
+            self._visit_registered_method(method_node, class_name)
         
         # Restore previous class context
         self.current_class = old_class
@@ -139,6 +151,7 @@ class SinglePassVisitor(ast.NodeVisitor):
         
         # Track function context for call analysis
         function_id = f"{self.file_path}::{func_name}"
+        self.variable_type_stack.append({})
         self.current_function_stack.append(function_id)
         
         # Visit function body to analyze calls
@@ -146,16 +159,45 @@ class SinglePassVisitor(ast.NodeVisitor):
         
         # Pop function from stack
         self.current_function_stack.pop()
+        self.variable_type_stack.pop()
     
-    def _handle_method(self, node: ast.FunctionDef, class_name: str):
-        """Handle method definition within a class."""
+    def visit_Assign(self, node: ast.Assign):
+        """Track simple variable assignments to class instances."""
+        class_name = self._infer_class_name(node.value)
+        if class_name:
+            current_scope = self._current_var_types()
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    current_scope[target.id] = class_name
+        self.generic_visit(node)
+
+    def visit_AnnAssign(self, node: ast.AnnAssign):
+        """Track annotated assignments that instantiate classes."""
+        class_name = self._infer_class_name(node.value)
+        if class_name and isinstance(node.target, ast.Name):
+            self._current_var_types()[node.target.id] = class_name
+        self.generic_visit(node)
+
+    def _current_var_types(self) -> Dict[str, str]:
+        return self.variable_type_stack[-1]
+
+    def _infer_class_name(self, value: Optional[ast.AST]) -> Optional[str]:
+        if isinstance(value, ast.Call):
+            func = value.func
+            if isinstance(func, ast.Name):
+                return func.id
+            if isinstance(func, ast.Attribute):
+                return func.attr
+        return None
+    
+    def _register_method(self, node: ast.FunctionDef, class_name: str):
+        """Register a method symbol without visiting its body."""
         method_name = f"{class_name}.{node.name}"
         method_symbol_id = self._create_symbol_id(self.file_path, method_name)
-        
+
         method_signature = self._extract_function_signature(node)
         method_docstring = ast.get_docstring(node)
-        
-        # Create symbol info
+
         symbol_info = SymbolInfo(
             type="method",
             file=self.file_path,
@@ -163,23 +205,22 @@ class SinglePassVisitor(ast.NodeVisitor):
             signature=method_signature,
             docstring=method_docstring
         )
-        
-        # Store in symbols and lookup index
+
         self.symbols[method_symbol_id] = symbol_info
         self.symbol_lookup[method_name] = method_symbol_id
-        self.symbol_lookup[node.name] = method_symbol_id  # Also index by method name alone
+        self.symbol_lookup[node.name] = method_symbol_id  # Also index by short method name
         self.functions.append(method_name)
-        
-        # Track method context for call analysis
+
+    def _visit_registered_method(self, node: ast.FunctionDef, class_name: str):
+        """Visit a previously registered method body for call analysis."""
+        method_name = f"{class_name}.{node.name}"
         function_id = f"{self.file_path}::{method_name}"
+        self.variable_type_stack.append({})
         self.current_function_stack.append(function_id)
-        
-        # Visit method body to analyze calls
         for child in node.body:
             self.visit(child)
-        
-        # Pop method from stack
         self.current_function_stack.pop()
+        self.variable_type_stack.pop()
     
     def visit_Import(self, node: ast.Import):
         """Handle import statements."""
@@ -206,38 +247,92 @@ class SinglePassVisitor(ast.NodeVisitor):
             
             if isinstance(node.func, ast.Name):
                 # Direct function call: function_name()
-                called_function = node.func.id
+                called_function = self._qualify_name(node.func.id)
             elif isinstance(node.func, ast.Attribute):
                 # Method call: obj.method() or module.function()
-                called_function = node.func.attr
+                if not self._is_super_call(node.func):
+                    qualifier = self._infer_attribute_qualifier(node.func.value)
+                    if qualifier:
+                        called_function = f"{qualifier}.{node.func.attr}"
+                    else:
+                        called_function = node.func.attr
             
             if called_function:
-                # Get the current calling function
                 caller_function = self.current_function_stack[-1]
-                
-                # Use O(1) lookup instead of O(n) iteration
-                # First try exact match
-                if called_function in self.symbol_lookup:
-                    symbol_id = self.symbol_lookup[called_function]
-                    symbol_info = self.symbols[symbol_id]
-                    if symbol_info.type in ["function", "method"]:
-                        if caller_function not in symbol_info.called_by:
-                            symbol_info.called_by.append(caller_function)
-                else:
-                    # Try method name match for any class
-                    for name, symbol_id in self.symbol_lookup.items():
-                        if name.endswith(f".{called_function}"):
-                            symbol_info = self.symbols[symbol_id]
-                            if symbol_info.type in ["function", "method"]:
-                                if caller_function not in symbol_info.called_by:
-                                    symbol_info.called_by.append(caller_function)
-                                break
+                if not self._register_call_relationship(caller_function, called_function):
+                    self.deferred_calls.append((caller_function, called_function))
         except Exception:
             # Silently handle parsing errors for complex call patterns
             pass
         
         # Continue visiting child nodes
         self.generic_visit(node)
+
+    def _register_call_relationship(self, caller_function: str, called_function: str) -> bool:
+        """Attempt to resolve a call relationship immediately."""
+        try:
+            if called_function in self.symbol_lookup:
+                symbol_id = self.symbol_lookup[called_function]
+                symbol_info = self.symbols[symbol_id]
+                if symbol_info.type in ["function", "method"]:
+                    if caller_function not in symbol_info.called_by:
+                        symbol_info.called_by.append(caller_function)
+                return True
+
+            for name, symbol_id in self.symbol_lookup.items():
+                if name.endswith(f".{called_function}"):
+                    symbol_info = self.symbols[symbol_id]
+                    if symbol_info.type in ["function", "method"]:
+                        if caller_function not in symbol_info.called_by:
+                            symbol_info.called_by.append(caller_function)
+                    return True
+        except Exception:
+            return False
+
+        return False
+
+    def _qualify_name(self, name: str) -> str:
+        """Map bare identifiers to fully qualified symbol names."""
+        if name in self.symbol_lookup:
+            return name
+        if name and name[0].isupper():
+            return f"{name}.__init__"
+        return name
+
+    def _infer_attribute_qualifier(self, value: ast.AST) -> Optional[str]:
+        """Infer class name for attribute-based calls."""
+        if isinstance(value, ast.Name):
+            return self._current_var_types().get(value.id)
+        if isinstance(value, ast.Call):
+            return self._infer_class_name(value)
+        if isinstance(value, ast.Attribute):
+            if isinstance(value.value, ast.Name):
+                inferred = self._current_var_types().get(value.value.id)
+                if inferred:
+                    return inferred
+            return value.attr
+        return None
+
+    def resolve_deferred_calls(self) -> List[Tuple[str, str]]:
+        """Resolve stored call relationships once all symbols are known."""
+        if not self.deferred_calls:
+            return []
+        current = list(self.deferred_calls)
+        unresolved: List[Tuple[str, str]] = []
+        self.deferred_calls.clear()
+        for caller, called in current:
+            if not self._register_call_relationship(caller, called):
+                unresolved.append((caller, called))
+        self.deferred_calls = unresolved
+        return unresolved
+
+    @staticmethod
+    def _is_super_call(attr_node: ast.Attribute) -> bool:
+        """Detect super().method(...) patterns."""
+        value = attr_node.value
+        if isinstance(value, ast.Call) and isinstance(value.func, ast.Name):
+            return value.func.id == "super"
+        return False
     
     def _create_symbol_id(self, file_path: str, symbol_name: str) -> str:
         """Create a unique symbol ID."""

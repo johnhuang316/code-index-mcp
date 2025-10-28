@@ -1,22 +1,22 @@
 """
-Deep Index Manager - Wrapper around JSONIndexManager for deep indexing.
+Deep Index Manager - Wrapper around the SQLite index manager.
 
-This class provides a clear semantic separation from the shallow manager.
-It delegates to the existing JSONIndexManager (symbols + files JSON index).
+This class provides a clear semantic separation from the shallow manager while
+delegating operations to the SQLite-backed implementation.
 """
 
 from __future__ import annotations
 
 from typing import Optional, Dict, Any, List
 
-from .json_index_manager import JSONIndexManager
+from .sqlite_index_manager import SQLiteIndexManager
 
 
 class DeepIndexManager:
-    """Thin wrapper over JSONIndexManager to expose deep-index API."""
+    """Thin wrapper over SQLiteIndexManager to expose deep-index API."""
 
     def __init__(self) -> None:
-        self._mgr = JSONIndexManager()
+        self._mgr = SQLiteIndexManager()
 
     # Expose a subset of API to keep callers simple
     def set_project_path(self, project_path: str) -> bool:
@@ -42,5 +42,3 @@ class DeepIndexManager:
 
     def cleanup(self) -> None:
         self._mgr.cleanup()
-
-

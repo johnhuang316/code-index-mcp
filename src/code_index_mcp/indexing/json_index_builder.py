@@ -8,6 +8,7 @@ maintainable Strategy pattern architecture.
 import logging
 import os
 import time
+from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, asdict
 from pathlib import Path
@@ -125,6 +126,7 @@ class JSONIndexBuilder:
         languages = set()
         specialized_count = 0
         fallback_count = 0
+        pending_calls: List[Tuple[str, str]] = []
 
         # Get specialized extensions for tracking
         specialized_extensions = set(self.strategy_factory.get_specialized_extensions())
@@ -138,6 +140,24 @@ class JSONIndexBuilder:
             return self._create_empty_index()
 
         logger.info(f"Processing {total_files} files...")
+
+        def process_result(result):
+            nonlocal specialized_count, fallback_count
+            if not result:
+                return
+            symbols, file_info_dict, language, is_specialized = result
+            for symbol_id, symbol_info in symbols.items():
+                all_symbols[symbol_id] = symbol_info
+            for rel_path, file_info in file_info_dict.items():
+                all_files[rel_path] = file_info
+                file_pending = getattr(file_info, "pending_calls", [])
+                if file_pending:
+                    pending_calls.extend(file_pending)
+            languages.add(language)
+            if is_specialized:
+                specialized_count += 1
+            else:
+                fallback_count += 1
 
         if parallel and total_files > 1:
             # Use ThreadPoolExecutor for I/O-bound file reading
@@ -160,16 +180,7 @@ class JSONIndexBuilder:
                     file_path = future_to_file[future]
                     result = future.result()
 
-                    if result:
-                        symbols, file_info_dict, language, is_specialized = result
-                        all_symbols.update(symbols)
-                        all_files.update(file_info_dict)
-                        languages.add(language)
-
-                        if is_specialized:
-                            specialized_count += 1
-                        else:
-                            fallback_count += 1
+                    process_result(result)
 
                     processed += 1
                     if processed % 100 == 0:
@@ -179,16 +190,9 @@ class JSONIndexBuilder:
             logger.info("Using sequential processing")
             for file_path in files_to_process:
                 result = self._process_file(file_path, specialized_extensions)
-                if result:
-                    symbols, file_info_dict, language, is_specialized = result
-                    all_symbols.update(symbols)
-                    all_files.update(file_info_dict)
-                    languages.add(language)
+                process_result(result)
 
-                    if is_specialized:
-                        specialized_count += 1
-                    else:
-                        fallback_count += 1
+        self._resolve_pending_calls(all_symbols, pending_calls)
 
         # Build index metadata
         metadata = IndexMetadata(
@@ -218,6 +222,44 @@ class JSONIndexBuilder:
         logger.info(f"Strategy usage: {specialized_count} specialized, {fallback_count} fallback")
 
         return index
+
+    def _resolve_pending_calls(
+        self,
+        all_symbols: Dict[str, SymbolInfo],
+        pending_calls: List[Tuple[str, str]]
+    ) -> None:
+        """Resolve cross-file call relationships using global symbol index."""
+        if not pending_calls:
+            return
+
+        short_index: Dict[str, List[str]] = defaultdict(list)
+        for symbol_id in all_symbols:
+            short_name = symbol_id.split("::")[-1]
+            short_index[short_name].append(symbol_id)
+
+        for caller, called in pending_calls:
+            target_ids: List[str] = []
+            if called in all_symbols:
+                target_ids = [called]
+            else:
+                if called in short_index:
+                    target_ids = short_index[called]
+                if not target_ids and "." in called:
+                    target_ids = short_index.get(called, [])
+                if not target_ids:
+                    matches: List[str] = []
+                    suffix = f".{called}"
+                    for short_name, ids in short_index.items():
+                        if short_name.endswith(suffix):
+                            matches.extend(ids)
+                    target_ids = matches
+
+            if len(target_ids) != 1:
+                continue
+
+            symbol_info = all_symbols[target_ids[0]]
+            if caller not in symbol_info.called_by:
+                symbol_info.called_by.append(caller)
 
     def _create_empty_index(self) -> Dict[str, Any]:
         """Create an empty index structure."""

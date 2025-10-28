@@ -150,42 +150,6 @@ class ProjectManagementService(BaseService):
             # Clear any existing index state
             pass
 
-    def _initialize_json_index_manager(self, project_path: str) -> Dict[str, Any]:
-        """
-        Business logic to initialize JSON index manager.
-
-        Args:
-            project_path: Project path
-
-        Returns:
-            Dictionary with initialization results
-        """
-        # Set project path in index manager
-        if not self._index_manager.set_project_path(project_path):
-            raise RuntimeError(f"Failed to set project path: {project_path}")
-
-        # Update context
-        self.helper.update_base_path(project_path)
-
-        # Try to load existing index or build new one
-        if self._index_manager.load_index():
-            source = "loaded_existing"
-        else:
-            if not self._index_manager.build_index():
-                raise RuntimeError("Failed to build index")
-            source = "built_new"
-
-        # Get stats
-        stats = self._index_manager.get_index_stats()
-        file_count = stats.get('indexed_files', 0)
-
-        return {
-            'file_count': file_count,
-            'source': source,
-            'total_symbols': stats.get('total_symbols', 0),
-            'languages': stats.get('languages', [])
-        }
-
     def _initialize_shallow_index_manager(self, project_path: str) -> Dict[str, Any]:
         """
         Business logic to initialize the shallow index manager by default.

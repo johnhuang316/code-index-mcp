@@ -7,6 +7,7 @@ SETTINGS_DIR = "code_indexer"
 CONFIG_FILE = "config.json"
 INDEX_FILE = "index.json"  # JSON index file (deep index)
 INDEX_FILE_SHALLOW = "index.shallow.json"  # Minimal shallow index (file list)
+INDEX_FILE_DB = "index.db"  # SQLite deep index file
 
 # Supported file extensions for code analysis
 # This is the authoritative list used by both old and new indexing systems
@@ -115,4 +116,3 @@ FILTER_CONFIG = {
     
     "supported_extensions": SUPPORTED_EXTENSIONS
 }
-
