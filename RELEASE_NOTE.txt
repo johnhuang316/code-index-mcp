@@ -1,3 +1,14 @@
+## 2.5.0 - SQLite Deep Index & Middleware Coverage
+
+### Highlights
+- Deep index now persists to SQLite via the new `SQLiteIndexStore`, replacing the legacy JSON cache while keeping build performance stable.
+- JavaScript strategy records middleware callbacks in the call graph, giving accurate `called_by` links for Express-style handlers.
+- TypeScript strategy captures limiter callbacks, closing gaps for `.ts` middleware exports and aligning coverage with JavaScript.
+- Added dedicated regression tests for the SQLite store/manager plus JavaScript and TypeScript call graph fixtures.
+
+### Notes
+- Existing JSON deep index files are ignored; rebuilds transparently populate the SQLite database under `%TEMP%/code_indexer/<project_hash>/`.
+
 ## 2.4.1 - Search Filtering Alignment
 
 ### Highlights
