@@ -35,6 +35,9 @@ class TypeScriptParsingStrategy(ParsingStrategy):
 
         # Symbol lookup index for O(1) access
         symbol_lookup = {}  # name -> symbol_id mapping
+        pending_calls: List[Tuple[str, str]] = []
+        pending_call_set: Set[Tuple[str, str]] = set()
+        variable_scopes: List[Dict[str, str]] = [{}]
 
         parser = tree_sitter.Parser(self.ts_language)
         tree = parser.parse(content.encode('utf8'))
@@ -48,7 +51,10 @@ class TypeScriptParsingStrategy(ParsingStrategy):
             classes=classes,
             imports=imports,
             exports=exports,
-            symbol_lookup=symbol_lookup
+            symbol_lookup=symbol_lookup,
+            pending_calls=pending_calls,
+            pending_call_set=pending_call_set,
+            variable_scopes=variable_scopes,
         )
 
         self._traverse_node_single_pass(tree.root_node, context)
@@ -61,6 +67,9 @@ class TypeScriptParsingStrategy(ParsingStrategy):
             exports=exports
         )
 
+        if context.pending_calls:
+            file_info.pending_calls = context.pending_calls
+
         return symbols, file_info
 
     def _traverse_node_single_pass(self, node, context: 'TraversalContext',
@@ -68,8 +77,10 @@ class TypeScriptParsingStrategy(ParsingStrategy):
                                   current_class: Optional[str] = None):
         """Single-pass traversal that extracts symbols and analyzes calls."""
 
+        node_type = node.type
+
         # Handle function declarations
-        if node.type == 'function_declaration':
+        if node_type == 'function_declaration':
             name = self._get_function_name(node, context.content)
             if name:
                 symbol_id = self._create_symbol_id(context.file_path, name)
@@ -92,7 +103,7 @@ class TypeScriptParsingStrategy(ParsingStrategy):
                 return
 
         # Handle class declarations
-        elif node.type == 'class_declaration':
+        elif node_type == 'class_declaration':
             name = self._get_class_name(node, context.content)
             if name:
                 symbol_id = self._create_symbol_id(context.file_path, name)
@@ -112,7 +123,7 @@ class TypeScriptParsingStrategy(ParsingStrategy):
                 return
 
         # Handle interface declarations
-        elif node.type == 'interface_declaration':
+        elif node_type == 'interface_declaration':
             name = self._get_interface_name(node, context.content)
             if name:
                 symbol_id = self._create_symbol_id(context.file_path, name)
@@ -132,7 +143,7 @@ class TypeScriptParsingStrategy(ParsingStrategy):
                 return
 
         # Handle method definitions
-        elif node.type == 'method_definition':
+        elif node_type == 'method_definition':
             method_name = self._get_method_name(node, context.content)
             if method_name and current_class:
                 full_name = f"{current_class}.{method_name}"
@@ -156,37 +167,68 @@ class TypeScriptParsingStrategy(ParsingStrategy):
                                                    current_class=current_class)
                 return
 
-        # Handle function calls
-        elif node.type == 'call_expression' and current_function:
-            # Extract the function being called
-            called_function = None
-            if node.children:
-                func_node = node.children[0]
-                if func_node.type == 'identifier':
-                    # Direct function call
-                    called_function = context.content[func_node.start_byte:func_node.end_byte]
-                elif func_node.type == 'member_expression':
-                    # Method call (obj.method or this.method)
-                    for child in func_node.children:
-                        if child.type == 'property_identifier':
-                            called_function = context.content[child.start_byte:child.end_byte]
-                            break
+        # Handle variable declarations that define callable exports
+        elif node_type in ['lexical_declaration', 'variable_statement']:
+            handled = False
+            for child in node.children:
+                if child.type != 'variable_declarator':
+                    continue
+                name_node = child.child_by_field_name('name')
+                value_node = child.child_by_field_name('value')
+                if not name_node or not value_node:
+                    continue
 
-            # Add relationship using O(1) lookup
-            if called_function:
-                if called_function in context.symbol_lookup:
-                    symbol_id = context.symbol_lookup[called_function]
-                    symbol_info = context.symbols[symbol_id]
-                    if current_function not in symbol_info.called_by:
-                        symbol_info.called_by.append(current_function)
-                else:
-                    # Try to find method with class prefix
-                    for name, sid in context.symbol_lookup.items():
-                        if name.endswith(f".{called_function}"):
-                            symbol_info = context.symbols[sid]
-                            if current_function not in symbol_info.called_by:
-                                symbol_info.called_by.append(current_function)
-                            break
+                if current_function is not None:
+                    continue
+
+                value_type = value_node.type
+                if value_type not in [
+                    'arrow_function',
+                    'function',
+                    'function_expression',
+                    'call_expression',
+                    'new_expression',
+                    'identifier',
+                    'member_expression',
+                ]:
+                    continue
+
+                name = context.content[name_node.start_byte:name_node.end_byte]
+                symbol_id = self._create_symbol_id(context.file_path, name)
+                signature = context.content[child.start_byte:child.end_byte].split('\n')[0].strip()
+                symbol_info = SymbolInfo(
+                    type="function",
+                    file=context.file_path,
+                    line=child.start_point[0] + 1,
+                    signature=signature
+                )
+                context.symbols[symbol_id] = symbol_info
+                context.symbol_lookup[name] = symbol_id
+                context.functions.append(name)
+                handled = True
+
+                if value_type in ['arrow_function', 'function', 'function_expression']:
+                    func_context = f"{context.file_path}::{name}"
+                    context.variable_scopes.append({})
+                    self._traverse_node_single_pass(
+                        value_node,
+                        context,
+                        current_function=func_context,
+                        current_class=current_class
+                    )
+                    context.variable_scopes.pop()
+
+            if handled:
+                return
+
+        # Handle function calls
+        elif node_type == 'call_expression':
+            caller = current_function or f"{context.file_path}:{node.start_point[0] + 1}"
+            called_function = self._resolve_called_function(node, context, current_class)
+            if caller and called_function:
+                self._register_call(context, caller, called_function)
+            if caller:
+                self._collect_callback_arguments(node, context, caller, current_class, current_function)
 
         # Handle import declarations
         elif node.type == 'import_statement':
@@ -202,6 +244,185 @@ class TypeScriptParsingStrategy(ParsingStrategy):
         for child in node.children:
             self._traverse_node_single_pass(child, context, current_function=current_function,
                                            current_class=current_class)
+
+    def _register_call(self, context: 'TraversalContext', caller: str, called: str) -> None:
+        if called in context.symbol_lookup:
+            symbol_id = context.symbol_lookup[called]
+            symbol_info = context.symbols[symbol_id]
+            if caller not in symbol_info.called_by:
+                symbol_info.called_by.append(caller)
+            return
+
+        key = (caller, called)
+        if key not in context.pending_call_set:
+            context.pending_call_set.add(key)
+            context.pending_calls.append(key)
+
+    def _collect_callback_arguments(
+        self,
+        node,
+        context: 'TraversalContext',
+        caller: str,
+        current_class: Optional[str],
+        current_function: Optional[str]
+    ) -> None:
+        arguments_node = node.child_by_field_name('arguments')
+        if not arguments_node:
+            return
+
+        for argument in arguments_node.children:
+            if not getattr(argument, "is_named", False):
+                continue
+            callback_name = self._resolve_argument_reference(argument, context, current_class)
+            if callback_name:
+                call_site = caller
+                if current_function is None:
+                    call_site = f"{context.file_path}:{argument.start_point[0] + 1}"
+                self._register_call(context, call_site, callback_name)
+
+    def _resolve_argument_reference(
+        self,
+        node,
+        context: 'TraversalContext',
+        current_class: Optional[str]
+    ) -> Optional[str]:
+        node_type = node.type
+
+        if node_type == 'identifier':
+            return context.content[node.start_byte:node.end_byte]
+
+        if node_type == 'member_expression':
+            property_node = node.child_by_field_name('property')
+            if property_node is None:
+                for child in node.children:
+                    if child.type in ['property_identifier', 'identifier']:
+                        property_node = child
+                        break
+            if property_node is None:
+                return None
+
+            property_name = context.content[property_node.start_byte:property_node.end_byte]
+            qualifier_node = node.child_by_field_name('object')
+            qualifier = self._resolve_member_qualifier(
+                qualifier_node,
+                context,
+                current_class
+            )
+            if not qualifier:
+                for child in node.children:
+                    if child is property_node:
+                        continue
+                    qualifier = self._resolve_member_qualifier(
+                        child,
+                        context,
+                        current_class
+                    )
+                    if qualifier:
+                        break
+            if qualifier:
+                return f"{qualifier}.{property_name}"
+            return property_name
+
+        return None
+
+    def _resolve_called_function(
+        self,
+        node,
+        context: 'TraversalContext',
+        current_class: Optional[str]
+    ) -> Optional[str]:
+        function_node = node.child_by_field_name('function')
+        if function_node is None and node.children:
+            function_node = node.children[0]
+        if function_node is None:
+            return None
+
+        if function_node.type == 'identifier':
+            return context.content[function_node.start_byte:function_node.end_byte]
+
+        if function_node.type == 'member_expression':
+            property_node = function_node.child_by_field_name('property')
+            if property_node is None:
+                for child in function_node.children:
+                    if child.type in ['property_identifier', 'identifier']:
+                        property_node = child
+                        break
+            if property_node is None:
+                return None
+
+            property_name = context.content[property_node.start_byte:property_node.end_byte]
+            qualifier_node = function_node.child_by_field_name('object')
+            qualifier = self._resolve_member_qualifier(
+                qualifier_node,
+                context,
+                current_class
+            )
+            if not qualifier:
+                for child in function_node.children:
+                    if child is property_node:
+                        continue
+                    qualifier = self._resolve_member_qualifier(
+                        child,
+                        context,
+                        current_class
+                    )
+                    if qualifier:
+                        break
+            if qualifier:
+                return f"{qualifier}.{property_name}"
+            return property_name
+
+        return None
+
+    def _resolve_member_qualifier(
+        self,
+        node,
+        context: 'TraversalContext',
+        current_class: Optional[str]
+    ) -> Optional[str]:
+        if node is None:
+            return None
+
+        node_type = node.type
+        if node_type == 'this':
+            return current_class
+
+        if node_type == 'identifier':
+            return context.content[node.start_byte:node.end_byte]
+
+        if node_type == 'member_expression':
+            property_node = node.child_by_field_name('property')
+            if property_node is None:
+                for child in node.children:
+                    if child.type in ['property_identifier', 'identifier']:
+                        property_node = child
+                        break
+            if property_node is None:
+                return None
+
+            qualifier = self._resolve_member_qualifier(
+                node.child_by_field_name('object'),
+                context,
+                current_class
+            )
+            if not qualifier:
+                for child in node.children:
+                    if child is property_node:
+                        continue
+                    qualifier = self._resolve_member_qualifier(
+                        child,
+                        context,
+                        current_class
+                    )
+                    if qualifier:
+                        break
+
+            property_name = context.content[property_node.start_byte:property_node.end_byte]
+            if qualifier:
+                return f"{qualifier}.{property_name}"
+            return property_name
+
+        return None
 
     def _get_function_name(self, node, content: str) -> Optional[str]:
         """Extract function name from tree-sitter node."""
@@ -239,8 +460,20 @@ class TypeScriptParsingStrategy(ParsingStrategy):
 class TraversalContext:
     """Context object to pass state during single-pass traversal."""
 
-    def __init__(self, content: str, file_path: str, symbols: Dict,
-                 functions: List, classes: List, imports: List, exports: List, symbol_lookup: Dict):
+    def __init__(
+        self,
+        content: str,
+        file_path: str,
+        symbols: Dict,
+        functions: List,
+        classes: List,
+        imports: List,
+        exports: List,
+        symbol_lookup: Dict,
+        pending_calls: List[Tuple[str, str]],
+        pending_call_set: Set[Tuple[str, str]],
+        variable_scopes: List[Dict[str, str]],
+    ):
         self.content = content
         self.file_path = file_path
         self.symbols = symbols
@@ -249,3 +482,6 @@ class TraversalContext:
         self.imports = imports
         self.exports = exports
         self.symbol_lookup = symbol_lookup
+        self.pending_calls = pending_calls
+        self.pending_call_set = pending_call_set
+        self.variable_scopes = variable_scopes
