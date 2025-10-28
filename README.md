@@ -52,6 +52,34 @@ The easiest way to get started with any MCP-compatible application:
    Analyze the main App.tsx file
    ```
 
+### Codex CLI Configuration
+
+If you are using Anthropic's Codex CLI, add the server to `~/.codex/config.toml`.
+On Windows the file lives at `C:\Users\<you>\.codex\config.toml`:
+
+```toml
+[mcp_servers.code-index]
+type = "stdio"
+command = "uvx"
+args = ["code-index-mcp"]
+```
+
+On Windows, `uvx` needs the standard profile directories to be present.
+Keep the environment override in the same block so the MCP starts reliably:
+
+```toml
+env = {
+  HOME = "C:\\Users\\<you>",
+  APPDATA = "C:\\Users\\<you>\\AppData\\Roaming",
+  LOCALAPPDATA = "C:\\Users\\<you>\\AppData\\Local",
+  SystemRoot = "C:\\Windows"
+}
+```
+
+Linux and macOS already expose the required XDG paths and `HOME`, so you can usually omit the `env`
+table there.
+Add overrides only if you run the CLI inside a restricted container.
+
 ## Typical Use Cases
 
 **Code Review**: "Find all places using the old API"  

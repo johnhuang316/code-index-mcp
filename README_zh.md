@@ -52,6 +52,33 @@
    分析主要的 App.tsx 檔案
    ```
 
+### Codex CLI 設定
+
+如果你使用 Anthropic 的 Codex CLI，請在 `~/.codex/config.toml` 中加入下列伺服器設定。
+Windows 的設定檔位於 `C:\Users\<you>\.codex\config.toml`：
+
+```toml
+[mcp_servers.code-index]
+type = "stdio"
+command = "uvx"
+args = ["code-index-mcp"]
+```
+
+在 Windows 中，`uvx` 需要找到標準的使用者目錄。保留下列環境變數覆寫設定，才能讓 MCP 穩定啟動：
+
+```toml
+env = {
+  HOME = "C:\\Users\\<you>",
+  APPDATA = "C:\\Users\\<you>\\AppData\\Roaming",
+  LOCALAPPDATA = "C:\\Users\\<you>\\AppData\\Local",
+  SystemRoot = "C:\\Windows"
+}
+```
+
+Linux 與 macOS 預設會提供 `HOME` 與 XDG 路徑，因此通常不需要額外的 `env` 區塊；只有在受限的容器環境或想手動調整快取／設定位置時才需要覆寫。
+完整的環境變數清單請參考 [`uv` 環境變數說明](https://docs.astral.sh/uv/reference/environment/)（包含 `HOME`、`XDG_CACHE_HOME`、`XDG_CONFIG_HOME`、`APPDATA` 等）。
+
+
 ## 典型使用場景
 
 **程式碼審查**：「找出所有使用舊 API 的地方」  

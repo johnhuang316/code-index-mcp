@@ -52,6 +52,35 @@ Code Index MCPは、AIモデルと複雑なコードベースの橋渡しをす�
    メインのApp.tsxファイルを解析
    ```
 
+### Codex CLI 設定
+
+Anthropic の Codex CLI を使用している場合は、`~/.codex/config.toml` に次のサーバー設定を追加します。
+Windows では `C:\Users\<you>\.codex\config.toml` に保存されています。
+
+```toml
+[mcp_servers.code-index]
+type = "stdio"
+command = "uvx"
+args = ["code-index-mcp"]
+```
+
+Windows の `uvx` は標準ユーザープロファイルディレクトリが必要です。
+MCP を安定して起動するために、同じブロックに次の環境変数を残してください。
+
+```toml
+env = {
+  HOME = "C:\\Users\\<you>",
+  APPDATA = "C:\\Users\\<you>\\AppData\\Roaming",
+  LOCALAPPDATA = "C:\\Users\\<you>\\AppData\\Local",
+  SystemRoot = "C:\\Windows"
+}
+```
+
+Linux と macOS では OS が `HOME` や XDG 系のパスを標準で公開しているため、通常は `env` セクションは不要です。
+制限されたコンテナで実行する場合やキャッシュ／設定の保存先を手動で変更したいときだけ上書きしてください。
+環境変数の一覧は [`uv` の環境変数リファレンス](https://docs.astral.sh/uv/reference/environment/)（`HOME`、`XDG_CACHE_HOME`、`XDG_CONFIG_HOME`、`APPDATA` など）を参照してください。
+
+
 ## 一般的な使用ケース
 
 **コードレビュー**：「旧いAPIを使用しているすべての箇所を検索」  
