@@ -49,18 +49,22 @@ class ParsingStrategy(ABC):
         return f"{relative_path}::{symbol_name}"
 
     def _get_relative_path(self, file_path: str) -> str:
-        """Convert absolute file path to relative path."""
-        parts = file_path.replace('\\', '/').split('/')
+        """Normalize path for symbol identifiers relative to project root."""
+        if not file_path:
+            return ""
 
-        # Priority order: test > src (outermost project roots first)
-        for root_dir in ['test', 'src']:
-            if root_dir in parts:
-                root_index = parts.index(root_dir)
-                relative_parts = parts[root_index:]
-                return '/'.join(relative_parts)
+        normalized = os.path.normpath(file_path)
+        if normalized == ".":
+            return ""
 
-        # Fallback: use just filename
-        return os.path.basename(file_path)
+        normalized = normalized.replace("\\", "/")
+        if normalized.startswith("./"):
+            normalized = normalized[2:]
+
+        if not os.path.isabs(file_path):
+            normalized = normalized.lstrip("/")
+
+        return normalized or os.path.basename(file_path)
 
     def _extract_line_number(self, content: str, symbol_position: int) -> int:
         """
