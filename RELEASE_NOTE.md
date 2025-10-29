@@ -1,3 +1,13 @@
+## 2.6.0 - CLI Project Bootstrap
+
+### Highlights
+- Added `--project-path` CLI flag so the server can initialize a repository immediately on startup.
+- CLI docs updated across all supported languages to document the new startup flag.
+- Server now guards optional `--mount-path` usage for older FastMCP versions that do not support it.
+
+### Notes
+- Supplying an invalid path with `--project-path` causes startup to fail fast with a clear error.
+
 ## 2.5.1 - Relative Symbol IDs
 
 ### Highlights
