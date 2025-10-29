@@ -1,3 +1,13 @@
+## 2.5.1 - Relative Symbol IDs
+
+### Highlights
+- Deep index symbol identifiers now use project-relative paths, preventing SQLite uniqueness collisions during rebuilds.
+- Added regression coverage to ensure duplicate filenames across directories generate distinct symbol IDs.
+- Release notes migrated to Markdown for easier editing.
+
+### Notes
+- Triggering a deep index rebuild will automatically regenerate symbol identifiers for existing caches.
+
 ## 2.5.0 - SQLite Deep Index & Middleware Coverage
 
 ### Highlights
