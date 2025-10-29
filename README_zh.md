@@ -41,6 +41,8 @@
      }
    }
    ```
+   > 若想在啟動時自動設定專案路徑，可在 `args` 陣列末尾加入
+   > `--project-path /絕對/路徑`，效果等同於啟動後呼叫 `set_project_path`。
 
 2. **重新啟動應用程式** – `uvx` 會自動處理安裝和執行
 
@@ -51,6 +53,7 @@
    搜尋「authentication」相關函數
    分析主要的 App.tsx 檔案
    ```
+   *如果啟動時已提供 `--project-path`，可以略過第一個指令，伺服器會自動記住路徑。*
 
 ### Codex CLI 設定
 
@@ -63,6 +66,8 @@ type = "stdio"
 command = "uvx"
 args = ["code-index-mcp"]
 ```
+> 如需要啟動時自動設定專案，請把 `--project-path C:/絕對/路徑` 加到 `args`
+> 清單中，與手動呼叫 `set_project_path` 的結果相同。
 
 在 Windows 中，`uvx` 需要找到標準的使用者目錄。保留下列環境變數覆寫設定，才能讓 MCP 穩定啟動：
 

@@ -9,6 +9,8 @@ to domain-specific services for business logic.
 """
 
 # Standard library imports
+import argparse
+import inspect
 import sys
 import logging
 from contextlib import asynccontextmanager
@@ -52,6 +54,7 @@ def setup_indexing_performance_logging():
 
 # Initialize logging (no file handlers)
 setup_indexing_performance_logging()
+logger = logging.getLogger(__name__)
 
 @dataclass
 class CodeIndexerContext:
@@ -60,6 +63,24 @@ class CodeIndexerContext:
     settings: ProjectSettings
     file_count: int = 0
     file_watcher_service: FileWatcherService = None
+
+
+@dataclass
+class _CLIConfig:
+    """Holds CLI configuration for bootstrap operations."""
+    project_path: str | None = None
+
+
+class _BootstrapRequestContext:
+    """Minimal request context to reuse business services during bootstrap."""
+
+    def __init__(self, lifespan_context: CodeIndexerContext):
+        self.lifespan_context = lifespan_context
+        self.session = None
+        self.meta = None
+
+
+_CLI_CONFIG = _CLIConfig()
 
 @asynccontextmanager
 async def indexer_lifespan(_server: FastMCP) -> AsyncIterator[CodeIndexerContext]:
@@ -78,6 +99,23 @@ async def indexer_lifespan(_server: FastMCP) -> AsyncIterator[CodeIndexerContext
     )
 
     try:
+        # Bootstrap project path when provided via CLI.
+        if _CLI_CONFIG.project_path:
+            bootstrap_ctx = Context(
+                request_context=_BootstrapRequestContext(context),
+                fastmcp=mcp
+            )
+            try:
+                message = ProjectManagementService(bootstrap_ctx).initialize_project(
+                    _CLI_CONFIG.project_path
+                )
+                logger.info("Project initialized from CLI flag: %s", message)
+            except Exception as exc:  # pylint: disable=broad-except
+                logger.error("Failed to initialize project from CLI flag: %s", exc)
+                raise RuntimeError(
+                    f"Failed to initialize project path '{_CLI_CONFIG.project_path}'"
+                ) from exc
+
         # Provide context to the server
         yield context
     finally:
@@ -300,9 +338,55 @@ def configure_file_watcher(
 # ----- PROMPTS -----
 # Removed: analyze_code, code_search, set_project prompts
 
-def main():
+def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    """Parse CLI arguments for the MCP server."""
+    parser = argparse.ArgumentParser(description="Code Index MCP server")
+    parser.add_argument(
+        "--project-path",
+        dest="project_path",
+        help="Set the project path on startup (equivalent to calling set_project_path)."
+    )
+    parser.add_argument(
+        "--transport",
+        choices=["stdio", "sse", "streamable-http"],
+        default="stdio",
+        help="Transport protocol to use (default: stdio)."
+    )
+    parser.add_argument(
+        "--mount-path",
+        dest="mount_path",
+        default=None,
+        help="Mount path when using SSE transport."
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None):
     """Main function to run the MCP server."""
-    mcp.run()
+    args = _parse_args(argv)
+
+    # Store CLI configuration for lifespan bootstrap.
+    _CLI_CONFIG.project_path = args.project_path
+
+    run_kwargs = {"transport": args.transport}
+    if args.transport == "sse" and args.mount_path:
+        run_signature = inspect.signature(mcp.run)
+        if "mount_path" in run_signature.parameters:
+            run_kwargs["mount_path"] = args.mount_path
+        else:
+            logger.warning(
+                "Ignoring --mount-path because this FastMCP version "
+                "does not accept the parameter."
+            )
+
+    try:
+        mcp.run(**run_kwargs)
+    except RuntimeError as exc:
+        logger.error("MCP server terminated with error: %s", exc)
+        raise SystemExit(1) from exc
+    except Exception as exc:  # pylint: disable=broad-except
+        logger.error("Unexpected MCP server error: %s", exc)
+        raise
 
 if __name__ == '__main__':
     main()

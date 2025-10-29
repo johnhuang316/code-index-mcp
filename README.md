@@ -41,6 +41,9 @@ The easiest way to get started with any MCP-compatible application:
      }
    }
    ```
+   > Optional: append `--project-path /absolute/path/to/repo` to the `args` array so the server
+   > initializes with that repository automatically (equivalent to calling `set_project_path`
+   > after startup).
 
 2. **Restart your application** – `uvx` automatically handles installation and execution
 
@@ -51,6 +54,8 @@ The easiest way to get started with any MCP-compatible application:
    Search for "authentication" functions
    Analyze the main App.tsx file
    ```
+   *If you launch with `--project-path`, you can skip the first command above - the server already
+   knows the project location.*
 
 ### Codex CLI Configuration
 
@@ -63,6 +68,8 @@ type = "stdio"
 command = "uvx"
 args = ["code-index-mcp"]
 ```
+> You can append `--project-path C:/absolute/path/to/repo` to the `args` list to set the project
+> automatically on startup (same effect as running the `set_project_path` tool).
 
 On Windows, `uvx` needs the standard profile directories to be present.
 Keep the environment override in the same block so the MCP starts reliably:

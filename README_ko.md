@@ -42,6 +42,8 @@ Code Index MCP는 [Model Context Protocol](https://modelcontextprotocol.io) 기�
    }
    ```
 
+   > 시작할 때 프로젝트를 자동으로 지정하려면 `args` 배열 끝에
+   > `--project-path /absolute/path/to/repo` 를 추가하세요. 이렇게 하면 시작 직후 `set_project_path` 를 호출한 것과 동일한 상태가 됩니다.
 2. **애플리케이션 재시작** – `uvx`가 설치와 실행을 자동으로 처리합니다.
 
 3. **사용 시작** (AI 어시스턴트에게 아래 프롬프트를 전달)
@@ -51,6 +53,7 @@ Code Index MCP는 [Model Context Protocol](https://modelcontextprotocol.io) 기�
    "authentication" 관련 함수를 검색해줘
    src/App.tsx 파일을 분석해줘
    ```
+   *실행 시 `--project-path` 옵션을 사용했다면 첫 번째 명령은 건너뛰어도 됩니다. 서버가 이미 경로를 알고 있습니다.*
 
 ### Codex CLI 설정
 
@@ -63,6 +66,8 @@ type = "stdio"
 command = "uvx"
 args = ["code-index-mcp"]
 ```
+> 실행 시 프로젝트를 자동으로 지정하려면 `args` 리스트에 `--project-path C:/absolute/path/to/repo` 를 추가하세요.
+> 이는 이후에 `set_project_path` 도구를 호출하는 것과 같은 효과입니다.
 
 Windows의 `uvx`는 기본 사용자 프로필 디렉터리가 필요합니다.
 MCP가 안정적으로 시작되도록 같은 블록에 아래 환경 변수 덮어쓰기를 유지하세요.

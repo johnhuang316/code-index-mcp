@@ -42,6 +42,9 @@ Code Index MCPは、AIモデルと複雑なコードベースの橋渡しをす�
    }
    ```
 
+   > 起動時にプロジェクトを自動設定したい場合は、`args` 配列の末尾に
+   > `--project-path /absolute/path/to/repo` を追加してください。これで起動直後に
+   > `set_project_path` を呼び出した場合と同じ状態になります。
 2. **アプリケーションを再起動** – `uvx`がインストールと実行を自動処理
 
 3. **使用開始**（AIアシスタントにこれらのプロンプトを与える）：
@@ -51,6 +54,7 @@ Code Index MCPは、AIモデルと複雑なコードベースの橋渡しをす�
    「authentication」関連関数を検索
    メインのApp.tsxファイルを解析
    ```
+   *起動時に `--project-path` を付けた場合は、最初のコマンドは不要です。サーバーが既にパスを認識しています。*
 
 ### Codex CLI 設定
 
@@ -63,6 +67,8 @@ type = "stdio"
 command = "uvx"
 args = ["code-index-mcp"]
 ```
+> 起動時にプロジェクトを設定したい場合は、`args` リストに `--project-path C:/absolute/path/to/repo` を追加してください。
+> これは起動後に `set_project_path` ツールを呼び出すのと同じ効果です。
 
 Windows の `uvx` は標準ユーザープロファイルディレクトリが必要です。
 MCP を安定して起動するために、同じブロックに次の環境変数を残してください。
