@@ -262,7 +262,7 @@ Then configure:
 ### 🔍 **Search & Discovery**
 | Tool | Description |
 |------|-------------|
-| **`search_code_advanced`** | Smart search with regex, fuzzy matching, and file filtering |
+| **`search_code_advanced`** | Smart search with regex, fuzzy matching, file filtering, and paginated results (10 per page by default) |
 | **`find_files`** | Locate files using glob patterns (e.g., `**/*.py`) |
 | **`get_file_summary`** | Analyze file structure, functions, imports, and complexity (requires deep index) |
 
@@ -331,7 +331,7 @@ Find authentication-related functions with fuzzy search for 'authUser'
 ```
 Search for "API_ENDPOINT" only in Python files
 ```
-*Uses: `search_code_advanced` with `file_pattern: "*.py"`*
+*Uses: `search_code_advanced` with `file_pattern: "*.py"` (defaults to 10 matches; use `max_results` to expand or `start_index` to page)*
 
 </details>
 

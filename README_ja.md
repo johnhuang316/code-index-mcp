@@ -284,7 +284,7 @@ pip install code-index-mcp
 ### 🔍 **検索・発見**
 | ツール | 説明 |
 |--------|------|
-| **`search_code_advanced`** | 正規表現、ファジーマッチング、ファイルフィルタリング対応のスマート検索 |
+| **`search_code_advanced`** | 正規表現、ファジーマッチング、ファイルフィルタリング対応のスマート検索。デフォルトで 1 ページあたり 10 件を返し、`max_results` と `start_index` で調整可能 |
 | **`find_files`** | globパターンを使用したファイル検索（例：`**/*.py`） |
 | **`get_file_summary`** | ファイル構造、関数、インポート、複雑度の解析（深いインデックスが必要） |
 
@@ -353,7 +353,7 @@ src/api/userService.ts の要約を教えてください
 ```
 Pythonファイルのみで "API_ENDPOINT" を検索してください
 ```
-*使用ツール：`search_code_advanced`、`file_pattern: "*.py"`*
+*使用ツール：`search_code_advanced`、`file_pattern: "*.py"`（デフォルトは 10 件。`max_results` で件数を増やし、`start_index` でページ送り）*
 
 </details>
 

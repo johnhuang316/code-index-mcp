@@ -189,7 +189,7 @@ Linux와 macOS는 운영체제가 `HOME`과 XDG 경로를 기본으로 제공하
 ### 🔍 **검색 & 탐색**
 | 도구 | 설명 |
 |------|------|
-| **`search_code_advanced`** | 정규식, 퍼지 매칭, 파일 필터링을 지원하는 스마트 검색 |
+| **`search_code_advanced`** | 정규식, 퍼지 매칭, 파일 필터링을 지원하는 스마트 검색 (기본적으로 페이지당 10개 결과 반환, `max_results`·`start_index`로 조정 가능) |
 | **`find_files`** | 글롭 패턴으로 파일 찾기 (예: `**/*.py`) |
 | **`get_file_summary`** | 파일 구조, 함수, 임포트, 복잡도를 분석 (심층 인덱스 필요) |
 
@@ -258,7 +258,7 @@ src/api/userService.ts 요약을 알려줘
 ```
 Python 파일에서만 "API_ENDPOINT" 를 찾아줘
 ```
-*`search_code_advanced` + `file_pattern="*.py"`*
+*`search_code_advanced` + `file_pattern="*.py"` (기본 10개 결과, `max_results`로 확장하고 `start_index`로 페이지 이동)*
 
 </details>
 
