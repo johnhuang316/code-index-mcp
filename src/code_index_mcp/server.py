@@ -15,7 +15,7 @@ import sys
 import logging
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import AsyncIterator, Dict, Any, List
+from typing import AsyncIterator, Dict, Any, List, Optional
 
 # Third-party imports
 from mcp.server.fastmcp import FastMCP, Context
@@ -164,10 +164,12 @@ def search_code_advanced(
     context_lines: int = 0,
     file_pattern: str = None,
     fuzzy: bool = False,
-    regex: bool = None
+    regex: bool = None,
+    start_index: int = 0,
+        max_results: Optional[int] = 10
 ) -> Dict[str, Any]:
     """
-    Search for a code pattern in the project using an advanced, fast tool.
+    Search for a code pattern in the project using an advanced, fast tool with pagination support.
 
     This tool automatically selects the best available command-line search tool
     (like ugrep, ripgrep, ag, or grep) for maximum performance.
@@ -195,9 +197,15 @@ def search_code_advanced(
                - If False, forces literal string search
                - If None (default), automatically detects regex patterns and enables regex for patterns like "ERROR|WARN"
                The pattern will always be validated for safety to prevent ReDoS attacks.
+        start_index: Zero-based offset into the flattened match list. Use to fetch subsequent pages.
+        max_results: Maximum number of matches to return (default 10). Pass None to retrieve all matches.
 
     Returns:
-        A dictionary containing the search results or an error message.
+        A dictionary containing:
+        - results: List of matches with file, line, and text keys.
+        - pagination: Metadata with total_matches, returned, start_index, end_index, has_more,
+                      and optionally max_results.
+        If an error occurs, an error message is returned instead.
 
     """
     return SearchService(ctx).search_code(
@@ -206,7 +214,9 @@ def search_code_advanced(
         context_lines=context_lines,
         file_pattern=file_pattern,
         fuzzy=fuzzy,
-        regex=regex
+        regex=regex,
+        start_index=start_index,
+        max_results=max_results
     )
 
 @mcp.tool()

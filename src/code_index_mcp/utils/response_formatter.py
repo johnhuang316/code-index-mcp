@@ -132,7 +132,10 @@ class ResponseFormatter:
         }
     
     @staticmethod
-    def search_results_response(results: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def search_results_response(
+        results: List[Dict[str, Any]],
+        pagination: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
         """
         Format search results response.
         
@@ -142,9 +145,14 @@ class ResponseFormatter:
         Returns:
             Formatted search results response
         """
-        return {
+        response = {
             "results": results
         }
+
+        if pagination is not None:
+            response["pagination"] = pagination
+
+        return response
     
     @staticmethod
     def config_response(config_data: Dict[str, Any]) -> str:

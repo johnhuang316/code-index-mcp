@@ -159,6 +159,35 @@ class ValidationHelper:
         return None
 
     @staticmethod
+    def validate_pagination(start_index: int, max_results: Optional[int]) -> Optional[str]:
+        """
+        Validate pagination parameters for search queries.
+
+        Args:
+            start_index: The index of the first result to include.
+            max_results: The maximum number of results to return.
+
+        Returns:
+            Error message if validation fails, None if valid.
+        """
+        if not isinstance(start_index, int):
+            return "start_index must be an integer"
+
+        if start_index < 0:
+            return "start_index cannot be negative"
+
+        if max_results is None:
+            return None
+
+        if not isinstance(max_results, int):
+            return "max_results must be an integer when provided"
+
+        if max_results <= 0:
+            return "max_results must be greater than zero when provided"
+
+        return None
+
+    @staticmethod
     def validate_file_extensions(extensions: List[str]) -> Optional[str]:
         """
         Validate a list of file extensions.
