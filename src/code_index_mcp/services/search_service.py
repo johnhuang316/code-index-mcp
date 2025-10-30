@@ -27,8 +27,7 @@ class SearchService(BaseService):
         context_lines: int = 0,
         file_pattern: Optional[str] = None,
         fuzzy: bool = False,
-        regex: Optional[bool] = None,
-        max_line_length: Optional[int] = None
+        regex: Optional[bool] = None
     ) -> Dict[str, Any]:
         """Search for code patterns in the project."""
         self._require_project_setup()
@@ -62,8 +61,7 @@ class SearchService(BaseService):
                 context_lines=context_lines,
                 file_pattern=file_pattern,
                 fuzzy=fuzzy,
-                regex=regex,
-                max_line_length=max_line_length
+                regex=regex
             )
             filtered = self._filter_results(results)
             return ResponseFormatter.search_results_response(filtered)

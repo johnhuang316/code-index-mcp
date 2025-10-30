@@ -47,8 +47,7 @@ class BasicSearchStrategy(SearchStrategy):
         context_lines: int = 0,
         file_pattern: Optional[str] = None,
         fuzzy: bool = False,
-        regex: bool = False,
-        max_line_length: Optional[int] = None
+        regex: bool = False
     ) -> Dict[str, List[Tuple[int, str]]]:
         """
         Execute a basic, line-by-line search.
@@ -62,7 +61,6 @@ class BasicSearchStrategy(SearchStrategy):
             file_pattern: File pattern to filter
             fuzzy: Enable word boundary matching
             regex: Enable regex pattern matching
-            max_line_length: Optional. Limit the length of lines when context_lines is used
         """
         results: Dict[str, List[Tuple[int, str]]] = {}
         
@@ -107,9 +105,6 @@ class BasicSearchStrategy(SearchStrategy):
                         for line_num, line in enumerate(f, 1):
                             if search_regex.search(line):
                                 content = line.rstrip('\n')
-                                if max_line_length and len(content) > max_line_length:
-                                    content = content[:max_line_length] + '... (truncated)'
-
                                 if rel_path not in results:
                                     results[rel_path] = []
                                 results[rel_path].append((line_num, content))

@@ -32,8 +32,7 @@ class GrepStrategy(SearchStrategy):
         context_lines: int = 0,
         file_pattern: Optional[str] = None,
         fuzzy: bool = False,
-        regex: bool = False,
-        max_line_length: Optional[int] = None
+        regex: bool = False
     ) -> Dict[str, List[Tuple[int, str]]]:
         """
         Execute a search using standard grep.
@@ -46,7 +45,6 @@ class GrepStrategy(SearchStrategy):
             file_pattern: File pattern to filter
             fuzzy: Enable word boundary matching
             regex: Enable regex pattern matching
-            max_line_length: Optional. Limit the length of lines when context_lines is used
         """
         # -r: recursive, -n: line number
         cmd = ['grep', '-r', '-n']
@@ -125,7 +123,7 @@ class GrepStrategy(SearchStrategy):
             if process.returncode > 1:
                  raise RuntimeError(f"grep failed with exit code {process.returncode}: {process.stderr}")
 
-            return parse_search_output(process.stdout, base_path, max_line_length)
+            return parse_search_output(process.stdout, base_path)
         
         except FileNotFoundError:
             raise RuntimeError("'grep' not found. Please install it and ensure it's in your PATH.")
