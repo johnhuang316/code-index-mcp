@@ -1,3 +1,4 @@
+
 [build-system]
 requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
@@ -22,6 +23,7 @@ dependencies = [
     "tree-sitter-zig>=0.20.0",
     "pathspec>=0.12.1",
     "msgpack>=1.0.0",
+    "pytest-asyncio>=1.2.0",
 ]
 
 [project.urls]
@@ -33,3 +35,8 @@ code-index-mcp = "code_index_mcp.server:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
+
+[tool.pytest.ini_options]
+testpaths = ["tests", "test"]
+python_files = "test_*.py"
+pythonpath = ["src"]

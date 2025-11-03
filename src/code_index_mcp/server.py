@@ -365,6 +365,19 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         help="Mount path when using SSE transport."
     )
+    parser.add_argument(
+        "--host",
+        dest="host",
+        default="localhost",
+        help="Host to bind when using streamable-http transport."
+    )
+    parser.add_argument(
+        "--port",
+        dest="port",
+        type=int,
+        default=8000,
+        help="Port to bind when using streamable-http transport."
+    )
     return parser.parse_args(argv)
 
 
@@ -385,6 +398,10 @@ def main(argv: list[str] | None = None):
                 "Ignoring --mount-path because this FastMCP version "
                 "does not accept the parameter."
             )
+
+    if args.transport == "streamable-http":
+        mcp.settings.host = args.host
+        mcp.settings.port = args.port
 
     try:
         mcp.run(**run_kwargs)

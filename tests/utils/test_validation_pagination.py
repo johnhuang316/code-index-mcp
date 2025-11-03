@@ -1,11 +1,5 @@
 """Tests for pagination validation helper."""
-from pathlib import Path as _TestPath
-import sys
 
-ROOT = _TestPath(__file__).resolve().parents[2]
-SRC_PATH = ROOT / 'src'
-if str(SRC_PATH) not in sys.path:
-    sys.path.insert(0, str(SRC_PATH))
 
 from code_index_mcp.utils.validation import ValidationHelper
 

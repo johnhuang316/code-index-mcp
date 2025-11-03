@@ -3,12 +3,8 @@ import os
 from types import SimpleNamespace
 from unittest.mock import patch
 from pathlib import Path as _TestPath
-import sys
 
-ROOT = _TestPath(__file__).resolve().parents[2]
-SRC_PATH = ROOT / 'src'
-if str(SRC_PATH) not in sys.path:
-    sys.path.insert(0, str(SRC_PATH))
+    
 
 from code_index_mcp.search.basic import BasicSearchStrategy
 from code_index_mcp.search.ripgrep import RipgrepStrategy

@@ -1,12 +1,6 @@
 """Tests for search result pagination formatting."""
 from pathlib import Path as _TestPath
 from types import SimpleNamespace
-import sys
-
-ROOT = _TestPath(__file__).resolve().parents[2]
-SRC_PATH = ROOT / 'src'
-if str(SRC_PATH) not in sys.path:
-    sys.path.insert(0, str(SRC_PATH))
 
 from code_index_mcp.services.search_service import SearchService
 
