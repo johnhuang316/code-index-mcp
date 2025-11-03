@@ -26,6 +26,7 @@ class GoParsingStrategy(ParsingStrategy):
         package = None
 
         lines = content.splitlines()
+        in_import_block = False
 
         for i, line in enumerate(lines):
             line = line.strip()
@@ -36,9 +37,23 @@ class GoParsingStrategy(ParsingStrategy):
 
             # Import statements
             elif line.startswith('import '):
+                # Single import: import "package"
                 import_match = re.search(r'import\s+"([^"]+)"', line)
                 if import_match:
                     imports.append(import_match.group(1))
+                # Multi-line import block: import (
+                elif '(' in line:
+                    in_import_block = True
+            
+            # Inside import block
+            elif in_import_block:
+                if ')' in line:
+                    in_import_block = False
+                else:
+                    # Extract import path from quotes
+                    import_match = re.search(r'"([^"]+)"', line)
+                    if import_match:
+                        imports.append(import_match.group(1))
 
             # Function declarations
             elif line.startswith('func '):
