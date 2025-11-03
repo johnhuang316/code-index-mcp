@@ -178,8 +178,21 @@ def test_go_symbol_discovery(test_code_with_all_symbols):
     assert 'User' in symbol_lookup['Activate'].signature
     assert 'User' in symbol_lookup['IsValid'].signature
     
-    # Note: Go strategy currently does not extract comments/docstrings
-    # The following assertions would pass if docstring extraction is implemented:
-    # assert symbol_lookup['Add'].docstring == "Add returns the sum of two integers."
-    # assert symbol_lookup['User'].docstring == "User represents a user in the system."
-    # assert symbol_lookup['Repository'].docstring == "Repository interface defines data access methods."
+    # Check docstrings/comments are extracted
+    assert symbol_lookup['Add'].docstring == "Add returns the sum of two integers."
+    assert symbol_lookup['ComplexFunc'].docstring is not None
+    assert "complex function signature" in symbol_lookup['ComplexFunc'].docstring.lower()
+    assert "variadic" in symbol_lookup['ComplexFunc'].docstring.lower()
+    
+    assert symbol_lookup['User'].docstring == "User represents a user in the system."
+    assert symbol_lookup['NewUser'].docstring == "NewUser creates a new User instance."
+    
+    assert symbol_lookup['GetFullName'].docstring == "GetFullName returns the user's full name."
+    assert symbol_lookup['Activate'].docstring is not None
+    assert "marks the user as active" in symbol_lookup['Activate'].docstring.lower()
+    
+    assert symbol_lookup['IsValid'].docstring is not None
+    assert "checks if the user has valid data" in symbol_lookup['IsValid'].docstring.lower()
+    
+    assert symbol_lookup['Repository'].docstring == "Repository interface defines data access methods."
+    assert symbol_lookup['Logger'].docstring == "Logger is a simple interface for logging."

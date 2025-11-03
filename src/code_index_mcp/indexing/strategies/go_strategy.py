@@ -60,12 +60,14 @@ class GoParsingStrategy(ParsingStrategy):
                 func_match = re.match(r'func\s+(\w+)\s*\(', line)
                 if func_match:
                     func_name = func_match.group(1)
+                    docstring = self._extract_go_comment(lines, i)
                     symbol_id = self._create_symbol_id(file_path, func_name)
                     symbols[symbol_id] = SymbolInfo(
                         type="function",
                         file=file_path,
                         line=i + 1,
-                        signature=line
+                        signature=line,
+                        docstring=docstring
                     )
                     functions.append(func_name)
 
@@ -73,12 +75,14 @@ class GoParsingStrategy(ParsingStrategy):
                 method_match = re.match(r'func\s+\([^)]+\)\s+(\w+)\s*\(', line)
                 if method_match:
                     method_name = method_match.group(1)
+                    docstring = self._extract_go_comment(lines, i)
                     symbol_id = self._create_symbol_id(file_path, method_name)
                     symbols[symbol_id] = SymbolInfo(
                         type="method",
                         file=file_path,
                         line=i + 1,
-                        signature=line
+                        signature=line,
+                        docstring=docstring
                     )
                     functions.append(method_name)
 
@@ -87,11 +91,13 @@ class GoParsingStrategy(ParsingStrategy):
                 struct_match = re.match(r'type\s+(\w+)\s+struct', line)
                 if struct_match:
                     struct_name = struct_match.group(1)
+                    docstring = self._extract_go_comment(lines, i)
                     symbol_id = self._create_symbol_id(file_path, struct_name)
                     symbols[symbol_id] = SymbolInfo(
                         type="struct",
                         file=file_path,
-                        line=i + 1
+                        line=i + 1,
+                        docstring=docstring
                     )
                     classes.append(struct_name)
 
@@ -100,11 +106,13 @@ class GoParsingStrategy(ParsingStrategy):
                 interface_match = re.match(r'type\s+(\w+)\s+interface', line)
                 if interface_match:
                     interface_name = interface_match.group(1)
+                    docstring = self._extract_go_comment(lines, i)
                     symbol_id = self._create_symbol_id(file_path, interface_name)
                     symbols[symbol_id] = SymbolInfo(
                         type="interface",
                         file=file_path,
-                        line=i + 1
+                        line=i + 1,
+                        docstring=docstring
                     )
                     classes.append(interface_name)
 
@@ -162,6 +170,65 @@ class GoParsingStrategy(ParsingStrategy):
             pass
         return None
 
+    def _extract_go_comment(self, lines: List[str], line_index: int) -> Optional[str]:
+        """Extract Go comment (docstring) from lines preceding the given line.
+        
+        Go documentation comments are regular comments that appear immediately before
+        the declaration, with no blank line in between.
+        """
+        comment_lines = []
+        
+        # Look backwards from the line before the declaration
+        i = line_index - 1
+        while i >= 0:
+            stripped = lines[i].strip()
+            
+            # Stop at empty line
+            if not stripped:
+                break
+            
+            # Single-line comment
+            if stripped.startswith('//'):
+                comment_text = stripped[2:].strip()
+                comment_lines.insert(0, comment_text)
+                i -= 1
+            # Multi-line comment block
+            elif stripped.startswith('/*') or stripped.endswith('*/'):
+                # Handle single-line /* comment */
+                if stripped.startswith('/*') and stripped.endswith('*/'):
+                    comment_text = stripped[2:-2].strip()
+                    comment_lines.insert(0, comment_text)
+                    i -= 1
+                # Handle multi-line comment block
+                elif stripped.endswith('*/'):
+                    # Found end of multi-line comment, collect until start
+                    temp_lines = []
+                    temp_lines.insert(0, stripped[:-2].strip())
+                    i -= 1
+                    while i >= 0:
+                        temp_stripped = lines[i].strip()
+                        if temp_stripped.startswith('/*'):
+                            temp_lines.insert(0, temp_stripped[2:].strip())
+                            comment_lines = temp_lines + comment_lines
+                            i -= 1
+                            break
+                        else:
+                            temp_lines.insert(0, temp_stripped)
+                            i -= 1
+                    break
+                else:
+                    break
+            else:
+                # Not a comment, stop looking
+                break
+        
+        if comment_lines:
+            # Join with newlines and clean up
+            docstring = '\n'.join(comment_lines)
+            return docstring if docstring else None
+        
+        return None
+
     def _extract_go_called_functions(self, line: str) -> List[str]:
         """Extract function names that are being called in this line."""
         called_functions = []
@@ -177,3 +244,4 @@ class GoParsingStrategy(ParsingStrategy):
             called_functions.extend(matches)
 
         return called_functions
+
