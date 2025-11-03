@@ -42,6 +42,45 @@ func ComplexFunc(name string, values ...int) (int, error) {
     return sum, nil
 }
 
+// Divide divides two numbers and returns the result.
+// It returns an error if the divisor is zero.
+//
+// Parameters:
+//   - a: the dividend
+//   - b: the divisor
+//
+// Returns:
+//   - float64: the quotient
+//   - error: an error if b is zero
+func Divide(a, b float64) (float64, error) {
+    if b == 0 {
+        return 0, errors.New("division by zero")
+    }
+    return a / b, nil
+}
+
+// ProcessData processes the given data with options.
+//
+// The function accepts a data string and processes it according to
+// the provided options. It supports multiple processing modes.
+//
+// Args:
+//   data: the input data string to process
+//   options: configuration options for processing
+//
+// Returns:
+//   The processed result string and any error encountered.
+//
+// Example:
+//   result, err := ProcessData("hello", Options{Mode: "upper"})
+//   if err != nil {
+//       log.Fatal(err)
+//   }
+func ProcessData(data string, options map[string]interface{}) (string, error) {
+    // Implementation
+    return strings.ToUpper(data), nil
+}
+
 // User represents a user in the system.
 type User struct {
     ID       int
@@ -122,7 +161,7 @@ def test_go_symbol_discovery(test_code_with_all_symbols):
     
     # Verify all expected functions are in file_info
     discovered_functions = file_info.symbols.get('functions', [])
-    expected_functions = ['Add', 'ComplexFunc', 'NewUser', 'GetFullName', 'Activate', 'IsValid']
+    expected_functions = ['Add', 'ComplexFunc', 'Divide', 'ProcessData', 'NewUser', 'GetFullName', 'Activate', 'IsValid']
     for func in expected_functions:
         assert func in discovered_functions, f"Function '{func}' not in file_info.symbols['functions']"
     
@@ -135,6 +174,8 @@ def test_go_symbol_discovery(test_code_with_all_symbols):
     # Verify all symbols are in lookup
     assert 'Add' in symbol_lookup
     assert 'ComplexFunc' in symbol_lookup
+    assert 'Divide' in symbol_lookup
+    assert 'ProcessData' in symbol_lookup
     assert 'User' in symbol_lookup
     assert 'NewUser' in symbol_lookup
     assert 'GetFullName' in symbol_lookup
@@ -146,6 +187,8 @@ def test_go_symbol_discovery(test_code_with_all_symbols):
     # Check symbol types
     assert symbol_lookup['Add'].type == 'function'
     assert symbol_lookup['ComplexFunc'].type == 'function'
+    assert symbol_lookup['Divide'].type == 'function'
+    assert symbol_lookup['ProcessData'].type == 'function'
     assert symbol_lookup['NewUser'].type == 'function'
     assert symbol_lookup['GetFullName'].type == 'method'
     assert symbol_lookup['Activate'].type == 'method'
@@ -196,3 +239,22 @@ def test_go_symbol_discovery(test_code_with_all_symbols):
     
     assert symbol_lookup['Repository'].docstring == "Repository interface defines data access methods."
     assert symbol_lookup['Logger'].docstring == "Logger is a simple interface for logging."
+    
+    # Check Go standard docstring format with parameters and returns
+    divide_doc = symbol_lookup['Divide'].docstring
+    assert divide_doc is not None
+    assert "divides two numbers" in divide_doc.lower()
+    assert "Parameters:" in divide_doc
+    assert "Returns:" in divide_doc
+    assert "- a: the dividend" in divide_doc
+    assert "- b: the divisor" in divide_doc
+    assert "error if b is zero" in divide_doc.lower()
+    
+    # Check detailed docstring with examples
+    process_doc = symbol_lookup['ProcessData'].docstring
+    assert process_doc is not None
+    assert "processes the given data" in process_doc.lower()
+    assert "Args:" in process_doc or "Parameters:" in process_doc.lower()
+    assert "Returns:" in process_doc
+    assert "Example:" in process_doc
+    assert "ProcessData" in process_doc
