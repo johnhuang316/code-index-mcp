@@ -100,10 +100,10 @@ class SinglePassVisitor(ast.NodeVisitor):
         old_class = self.current_class
         self.current_class = class_name
         
-        method_nodes: List[ast.FunctionDef] = []
+        method_nodes = []
         # First pass: register methods so forward references resolve
         for child in node.body:
-            if isinstance(child, ast.FunctionDef):
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 self._register_method(child, class_name)
                 method_nodes.append(child)
             else:
@@ -118,6 +118,14 @@ class SinglePassVisitor(ast.NodeVisitor):
     
     def visit_FunctionDef(self, node: ast.FunctionDef):
         """Visit function definition - extract symbol and track context."""
+        self._process_function(node)
+    
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef):
+        """Visit async function definition - extract symbol and track context."""
+        self._process_function(node)
+    
+    def _process_function(self, node):
+        """Process both sync and async function definitions."""
         # Skip if this is a method (already handled by ClassDef)
         if self.current_class:
             return

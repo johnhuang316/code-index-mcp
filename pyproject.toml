@@ -23,7 +23,6 @@ dependencies = [
     "tree-sitter-zig>=0.20.0",
     "pathspec>=0.12.1",
     "msgpack>=1.0.0",
-    "pytest-asyncio>=1.2.0",
 ]
 
 [project.urls]
