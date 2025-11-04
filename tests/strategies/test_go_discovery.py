@@ -1,9 +1,6 @@
 #!/usr/bin/env python3
-"""
-Test for Go symbol discovery including all symbol types.
-"""
+"""Test for Go symbol discovery including all symbol types."""
 import pytest
-from textwrap import dedent
 
 from code_index_mcp.indexing.strategies.go_strategy import GoParsingStrategy
 
@@ -15,11 +12,16 @@ def test_code_with_all_symbols():
 package main
 
 import (
-    "fmt"
-    "strings"
+    "fmt" // comment mentioning ) parentheses )
+    strutil "strings"
+    helper "example.com/project/toolkit"
+) // closing comment with ) ) characters
+import ("math" /* inline comment ) inside */)
+import . "errors"
+import _ "embed"
+import (
+    "time"
 )
-
-import "errors"
 
 // Application version constant
 const VERSION = "1.0.0"
@@ -154,10 +156,14 @@ def test_go_symbol_discovery(test_code_with_all_symbols):
     # Verify package is extracted
     assert file_info.package == "main"
     
-    # Verify imports are extracted (both multi-line block and single-line)
+    # Verify imports are extracted (including tricky formats and aliases)
     assert "fmt" in file_info.imports
     assert "strings" in file_info.imports
     assert "errors" in file_info.imports
+    assert "example.com/project/toolkit" in file_info.imports
+    assert "math" in file_info.imports
+    assert "embed" in file_info.imports
+    assert "time" in file_info.imports
     
     # Verify all expected functions are in file_info
     discovered_functions = file_info.symbols.get('functions', [])

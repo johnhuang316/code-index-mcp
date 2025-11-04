@@ -21,12 +21,10 @@ class GoParsingStrategy(ParsingStrategy):
         """Parse Go file using regex patterns."""
         symbols = {}
         functions = []
-        classes = []  # Go doesn't have classes, but we'll track structs/interfaces
-        imports = []
-        package = None
-
         lines = content.splitlines()
-        in_import_block = False
+        classes = []  # Go doesn't have classes, but we'll track structs/interfaces
+        imports = self._extract_go_imports(lines)
+        package = None
 
         for i, line in enumerate(lines):
             line = line.strip()
@@ -34,26 +32,6 @@ class GoParsingStrategy(ParsingStrategy):
             # Package declaration
             if line.startswith('package '):
                 package = line.split('package ')[1].strip()
-
-            # Import statements
-            elif line.startswith('import '):
-                # Single import: import "package"
-                import_match = re.search(r'import\s+"([^"]+)"', line)
-                if import_match:
-                    imports.append(import_match.group(1))
-                # Multi-line import block: import (
-                elif '(' in line:
-                    in_import_block = True
-            
-            # Inside import block
-            elif in_import_block:
-                if ')' in line:
-                    in_import_block = False
-                else:
-                    # Extract import path from quotes
-                    import_match = re.search(r'"([^"]+)"', line)
-                    if import_match:
-                        imports.append(import_match.group(1))
 
             # Function declarations
             elif line.startswith('func '):
@@ -170,6 +148,141 @@ class GoParsingStrategy(ParsingStrategy):
             pass
         return None
 
+    def _extract_go_imports(self, lines: List[str]) -> List[str]:
+        """Extract Go import paths, handling multi-line blocks and comments."""
+        imports: List[str] = []
+        in_block_comment = False
+        paren_depth = 0
+
+        for raw_line in lines:
+            clean_line, in_block_comment = self._strip_go_comments(raw_line, in_block_comment)
+            stripped = clean_line.strip()
+
+            if not stripped:
+                continue
+
+            if paren_depth == 0:
+                if not stripped.startswith('import '):
+                    continue
+
+                remainder = stripped[len('import '):].strip()
+                if not remainder:
+                    continue
+
+                imports.extend(self._extract_string_literals(remainder))
+
+                paren_depth = (
+                    self._count_unquoted_characters(remainder, '(')
+                    - self._count_unquoted_characters(remainder, ')')
+                )
+                if paren_depth <= 0:
+                    paren_depth = 0
+                continue
+
+            imports.extend(self._extract_string_literals(clean_line))
+            paren_depth += self._count_unquoted_characters(clean_line, '(')
+            paren_depth -= self._count_unquoted_characters(clean_line, ')')
+            if paren_depth <= 0:
+                paren_depth = 0
+
+        return imports
+
+    def _strip_go_comments(self, line: str, in_block_comment: bool) -> Tuple[str, bool]:
+        """Remove Go comments from a line while tracking block comment state."""
+        result: List[str] = []
+        i = 0
+        length = len(line)
+
+        while i < length:
+            if in_block_comment:
+                if line.startswith('*/', i):
+                    in_block_comment = False
+                    i += 2
+                else:
+                    i += 1
+                continue
+
+            if line.startswith('//', i):
+                break
+
+            if line.startswith('/*', i):
+                in_block_comment = True
+                i += 2
+                continue
+
+            result.append(line[i])
+            i += 1
+
+        return ''.join(result), in_block_comment
+
+    def _extract_string_literals(self, line: str) -> List[str]:
+        """Return string literal values found in a line (supports " and `)."""
+        literals: List[str] = []
+        i = 0
+        length = len(line)
+
+        while i < length:
+            char = line[i]
+            if char not in ('"', '`'):
+                i += 1
+                continue
+
+            delimiter = char
+            i += 1
+            buffer: List[str] = []
+            while i < length:
+                current = line[i]
+                if delimiter == '"':
+                    if current == '\\':
+                        if i + 1 < length:
+                            buffer.append(line[i + 1])
+                            i += 2
+                            continue
+                    elif current == '"':
+                        literals.append(''.join(buffer))
+                        i += 1
+                        break
+                else:  # Raw string delimited by backticks
+                    if current == '`':
+                        literals.append(''.join(buffer))
+                        i += 1
+                        break
+
+                buffer.append(current)
+                i += 1
+            else:
+                break
+
+        return literals
+
+    def _count_unquoted_characters(self, line: str, target: str) -> int:
+        """Count occurrences of a character outside string literals."""
+        count = 0
+        i = 0
+        length = len(line)
+        delimiter: Optional[str] = None
+
+        while i < length:
+            char = line[i]
+            if delimiter is None:
+                if char in ('"', '`'):
+                    delimiter = char
+                elif char == target:
+                    count += 1
+            else:
+                if delimiter == '"':
+                    if char == '\\':
+                        i += 2
+                        continue
+                    if char == '"':
+                        delimiter = None
+                elif delimiter == '`' and char == '`':
+                    delimiter = None
+
+            i += 1
+
+        return count
+
     def _extract_go_comment(self, lines: List[str], line_index: int) -> Optional[str]:
         """Extract Go comment (docstring) from lines preceding the given line.
         
@@ -244,4 +357,3 @@ class GoParsingStrategy(ParsingStrategy):
             called_functions.extend(matches)
 
         return called_functions
-
