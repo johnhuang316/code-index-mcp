@@ -1,44 +1,148 @@
-name: Publish to PyPI
+name: Release
 
 on:
   release:
-    types: [created]
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (vX.Y.Z) to re-run publish flow'
+        required: true
+        type: string
+
+concurrency:
+  group: release-${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', github.event.inputs.tag) || github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  deploy:
+  verify-and-build:
     runs-on: ubuntu-latest
+    env:
+      RELEASE_REF: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', github.event.inputs.tag) || github.ref }}
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}
     steps:
-    - uses: actions/checkout@v3
-    
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.10'
-    
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install build twine
-    
-    - name: Extract version from tag
-      id: get_version
-      run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_ENV
-      
-    - name: Update version in files
-      run: |
-        # Update pyproject.toml version
-        sed -i "s/^version = .*/version = \"${{ env.VERSION }}\"/" pyproject.toml
-        
-        # Update __init__.py version
-        sed -i "s/__version__ = .*/__version__ = \"${{ env.VERSION }}\"/" src/code_index_mcp/__init__.py
-    
-    - name: Build package
-      run: python -m build
-    
-    - name: Check package
-      run: twine check dist/*
-      
-    - name: Publish to PyPI
-      uses: pypa/gh-action-pypi-publish@release/v1
-      with:
-        password: ${{ secrets.PYPI_API_TOKEN }}
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ env.RELEASE_REF }}
+
+      - name: Ensure tag is published from main
+        run: |
+          git fetch origin main
+          if ! git merge-base --is-ancestor "$(git rev-parse HEAD)" origin/main; then
+            echo "::error::Release tag must point to a commit reachable from main"
+            exit 1
+          fi
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install uv
+        run: python -m pip install --upgrade pip uv
+
+      - name: Cache uv environments
+        uses: actions/cache@v4
+        with:
+          path: |
+            .venv
+            .uv-cache
+          key: uv-${{ runner.os }}-${{ hashFiles('uv.lock') }}
+          restore-keys: |
+            uv-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Verify version matches tag
+        run: |
+          TAG_VERSION="${RELEASE_TAG#v}"
+          if [ "$TAG_VERSION" = "$RELEASE_TAG" ]; then
+            echo "::error::Release tag must start with the letter 'v' (e.g. v1.2.3)"
+            exit 1
+          fi
+
+          PYPROJECT_VERSION=$(python - <<'PY'
+import pathlib, re
+text = pathlib.Path("pyproject.toml").read_text()
+match = re.search(r'^version\s*=\s*"([^"]+)"', text, re.MULTILINE)
+if not match:
+    raise SystemExit("Could not read version from pyproject.toml")
+print(match.group(1))
+PY
+          )
+
+          INIT_VERSION=$(python - <<'PY'
+import pathlib, re
+text = pathlib.Path("src/code_index_mcp/__init__.py").read_text()
+match = re.search(r'__version__\s*=\s*"([^"]+)"', text)
+if not match:
+    raise SystemExit("Could not read __version__ from src/code_index_mcp/__init__.py")
+print(match.group(1))
+PY
+          )
+
+          LOCK_VERSION=$(python - <<'PY'
+version = None
+with open("uv.lock", "r", encoding="utf-8") as fh:
+    lines = fh.readlines()
+for idx, line in enumerate(lines):
+    if line.strip() == 'name = "code-index-mcp"':
+        for follower in lines[idx:idx+6]:
+            if follower.strip().startswith("version ="):
+                version = follower.split("=", 1)[1].strip().strip('"')
+                break
+        break
+if version is None:
+    raise SystemExit("Could not find code-index-mcp in uv.lock")
+print(version)
+PY
+          )
+
+          for entry in "pyproject.toml:$PYPROJECT_VERSION" "src/code_index_mcp/__init__.py:$INIT_VERSION" "uv.lock:$LOCK_VERSION"; do
+            FILE=${entry%%:*}
+            VERSION=${entry#*:}
+            if [ "$VERSION" != "$TAG_VERSION" ]; then
+              echo "::error file=$FILE::Expected version $TAG_VERSION but found $VERSION"
+              exit 1
+            fi
+          done
+
+      - name: Run tests
+        run: |
+          uv run pytest
+          uv run code-index-mcp --help
+
+      - name: Build distributions
+        run: uv run python -m build
+
+      - name: Twine check
+        run: uv run twine check dist/*
+
+      - name: Upload dist artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ env.RELEASE_TAG }}
+          path: dist/*
+          retention-days: 7
+
+  publish:
+    needs: verify-and-build
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-${{ env.RELEASE_TAG }}
+          path: dist
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist
+          password: ${{ secrets.PYPI_API_TOKEN }}
