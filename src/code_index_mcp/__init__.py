@@ -3,4 +3,4 @@
 A Model Context Protocol server for code indexing, searching, and analysis.
 """
 
-__version__ = "2.7.0"
+__version__ = "2.8.0"
