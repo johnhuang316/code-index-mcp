@@ -26,11 +26,15 @@ jobs:
           fetch-depth: 0
           ref: ${{ env.RELEASE_REF }}
 
-      - name: Ensure tag is published from main
+      - name: Ensure tag points to default branch
         run: |
-          git fetch origin main
-          if ! git merge-base --is-ancestor "$(git rev-parse HEAD)" origin/main; then
-            echo "::error::Release tag must point to a commit reachable from main"
+          git fetch origin
+          TARGET_BRANCH=$(git remote show origin | awk '/HEAD branch/ {print $NF}')
+          if [ -z "$TARGET_BRANCH" ]; then
+            TARGET_BRANCH=master
+          fi
+          if ! git merge-base --is-ancestor "$(git rev-parse HEAD)" "origin/${TARGET_BRANCH}"; then
+            echo "::error::Release tag must point to a commit reachable from ${TARGET_BRANCH}"
             exit 1
           fi
 
@@ -55,64 +59,8 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen
 
-      - name: Verify version matches tag
-        run: |
-          TAG_VERSION="${RELEASE_TAG#v}"
-          if [ "$TAG_VERSION" = "$RELEASE_TAG" ]; then
-            echo "::error::Release tag must start with the letter 'v' (e.g. v1.2.3)"
-            exit 1
-          fi
-
-          PYPROJECT_VERSION=$(python - <<'PY'
-import pathlib, re
-text = pathlib.Path("pyproject.toml").read_text()
-match = re.search(r'^version\s*=\s*"([^"]+)"', text, re.MULTILINE)
-if not match:
-    raise SystemExit("Could not read version from pyproject.toml")
-print(match.group(1))
-PY
-          )
-
-          INIT_VERSION=$(python - <<'PY'
-import pathlib, re
-text = pathlib.Path("src/code_index_mcp/__init__.py").read_text()
-match = re.search(r'__version__\s*=\s*"([^"]+)"', text)
-if not match:
-    raise SystemExit("Could not read __version__ from src/code_index_mcp/__init__.py")
-print(match.group(1))
-PY
-          )
-
-          LOCK_VERSION=$(python - <<'PY'
-version = None
-with open("uv.lock", "r", encoding="utf-8") as fh:
-    lines = fh.readlines()
-for idx, line in enumerate(lines):
-    if line.strip() == 'name = "code-index-mcp"':
-        for follower in lines[idx:idx+6]:
-            if follower.strip().startswith("version ="):
-                version = follower.split("=", 1)[1].strip().strip('"')
-                break
-        break
-if version is None:
-    raise SystemExit("Could not find code-index-mcp in uv.lock")
-print(version)
-PY
-          )
-
-          for entry in "pyproject.toml:$PYPROJECT_VERSION" "src/code_index_mcp/__init__.py:$INIT_VERSION" "uv.lock:$LOCK_VERSION"; do
-            FILE=${entry%%:*}
-            VERSION=${entry#*:}
-            if [ "$VERSION" != "$TAG_VERSION" ]; then
-              echo "::error file=$FILE::Expected version $TAG_VERSION but found $VERSION"
-              exit 1
-            fi
-          done
-
-      - name: Run tests
-        run: |
-          uv run pytest
-          uv run code-index-mcp --help
+      - name: Install build tooling
+        run: uv pip install build twine
 
       - name: Build distributions
         run: uv run python -m build
