@@ -76,8 +76,7 @@ def handle_mcp_resource_errors(func: Callable) -> Callable:
     Example:
         @mcp.resource("config://code-indexer")
         @handle_mcp_resource_errors
-        def get_config() -> str:
-            ctx = mcp.get_context()
+        def get_config(ctx: Context) -> str:
             from ..services.project_management_service import ProjectManagementService
             return ProjectManagementService(ctx).get_project_config()
     """

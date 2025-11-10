@@ -87,6 +87,21 @@ Linux and macOS already expose the required XDG paths and `HOME`, so you can usu
 table there.
 Add overrides only if you run the CLI inside a restricted container.
 
+### FastMCP & Discovery Manifests
+
+- Run `fastmcp run fastmcp.json` to launch the server via [FastMCP](https://fastmcp.wiki/) with
+  the correct source entrypoint and dependency metadata. Pass `--project-path` (or call the
+  `set_project_path` tool after startup) so the index boots against the right repository.
+- Serve or copy `.well-known/mcp.json` to share a standards-compliant MCP manifest. Clients that
+  support the `.well-known` convention (e.g., Claude Desktop, Codex CLI) can import this file
+  directly instead of crafting configs manually.
+- Publish `.well-known/mcp.llmfeed.json` when you want to expose the richer LLM Feed metadata.
+  It references the same `code-index` server definition plus documentation/source links, which
+  helps registries present descriptions, tags, and capabilities automatically.
+
+When sharing the manifests, remind consumers to supply `--project-path` (or to call
+`set_project_path`) so the server indexes the intended repository.
+
 ## Typical Use Cases
 
 **Code Review**: "Find all places using the old API"  

@@ -1,0 +1,28 @@
+{
+    "$schema": "https://modelcontextprotocol.io/schemas/mcp.json",
+    "mcpServers": {
+        "code-index": {
+            "command": "uv",
+            "args": [
+                "run",
+                "code-index-mcp"
+            ],
+            "transport": {
+                "type": "stdio"
+            },
+            "metadata": {
+                "name": "Code Index MCP",
+                "description": "Local code-aware MCP server with project indexing, search, and file tools.",
+                "homepage": "https://github.com/johnhuang316/code-index-mcp",
+                "capabilities": [
+                    "code-search",
+                    "symbol-indexing",
+                    "file-system"
+                ]
+            }
+        }
+    },
+    "llmfeed_extension": {
+        "path": ".well-known/mcp.llmfeed.json"
+    }
+}
