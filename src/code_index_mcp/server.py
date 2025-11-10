@@ -31,9 +31,7 @@ from .services.project_management_service import ProjectManagementService
 from .services.index_management_service import IndexManagementService
 from .services.code_intelligence_service import CodeIntelligenceService
 from .services.system_management_service import SystemManagementService
-from .utils import (
-    handle_mcp_resource_errors, handle_mcp_tool_errors
-)
+from .utils import handle_mcp_tool_errors
 
 # Setup logging without writing to files
 def setup_indexing_performance_logging():
@@ -125,25 +123,6 @@ async def indexer_lifespan(_server: FastMCP) -> AsyncIterator[CodeIndexerContext
 
 # Create the MCP server with lifespan manager
 mcp = FastMCP("CodeIndexer", lifespan=indexer_lifespan, dependencies=["pathlib"])
-
-# ----- RESOURCES -----
-
-@mcp.resource("config://code-indexer")
-@handle_mcp_resource_errors
-def get_config(ctx: Context) -> str:
-    """Get the current configuration of the Code Indexer."""
-    return ProjectManagementService(ctx).get_project_config()
-
-@mcp.resource("files://{file_path}")
-@handle_mcp_resource_errors
-def get_file_content(file_path: str, ctx: Context) -> str:
-    """Get the content of a specific file."""
-    # Use FileService for simple file reading - this is appropriate for a resource
-    return FileService(ctx).get_file_content(file_path)
-
-# Removed: structure://project resource - not necessary for most workflows
-# Removed: settings://stats resource - this information is available via get_settings_info() tool
-# and is more of a debugging/technical detail rather than context AI needs
 
 # ----- TOOLS -----
 
