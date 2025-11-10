@@ -8,7 +8,12 @@ This package contains shared utilities used across services:
 - response_formatter: Response formatting utilities
 """
 
-from .error_handler import handle_mcp_errors, handle_mcp_resource_errors, handle_mcp_tool_errors
+from .error_handler import (
+    handle_mcp_errors,
+    handle_mcp_resource_errors,
+    handle_mcp_tool_errors,
+    MCPToolError,
+)
 from .context_helper import ContextHelper
 from .validation import ValidationHelper
 from .response_formatter import ResponseFormatter
@@ -18,6 +23,7 @@ __all__ = [
     'handle_mcp_errors',
     'handle_mcp_resource_errors',
     'handle_mcp_tool_errors',
+    'MCPToolError',
     'ContextHelper', 
     'ValidationHelper',
     'ResponseFormatter',

@@ -6,21 +6,28 @@ This module provides consistent error handling across all MCP tools, resources, 
 
 import functools
 import json
-from typing import Any, Callable, Dict, Union
+from typing import Any, Callable
+
+
+class MCPToolError(RuntimeError):
+    """Exception raised when an MCP entry point fails."""
+
+    def __init__(self, message: str):
+        super().__init__(message)
 
 
 def handle_mcp_errors(return_type: str = 'str') -> Callable:
     """
     Decorator to handle exceptions in MCP entry points consistently.
 
-    This decorator catches all exceptions and formats them according to the expected
-    return type, providing consistent error responses across all MCP entry points.
+    This decorator catches all exceptions and rethrows them as MCPToolError after
+    formatting a consistent error message. FastMCP converts the raised exception
+    into a structured error response for the client.
 
     Args:
-        return_type: The expected return type format
-            - 'str': Returns error as string format "Error: {message}"
-            - 'dict': Returns error as dict format {"error": "Operation failed: {message}"}
-            - 'json': Returns error as JSON string with dict format
+        return_type: Label used to format the error message for logging/consistency.
+            - 'str'/'list'/others: Prefixes message with "Error: ..."
+            - 'dict'/'json': Prefixes message with "Operation failed: ..."
 
     Returns:
         Decorator function that wraps MCP entry points with error handling
@@ -39,18 +46,15 @@ def handle_mcp_errors(return_type: str = 'str') -> Callable:
     """
     def decorator(func: Callable) -> Callable:
         @functools.wraps(func)
-        def wrapper(*args, **kwargs) -> Union[str, Dict[str, Any]]:
+        def wrapper(*args, **kwargs) -> Any:
             try:
                 return func(*args, **kwargs)
-            except Exception as e:
-                error_message = str(e)
-
-                if return_type == 'dict':
-                    return {"error": f"Operation failed: {error_message}"}
-                elif return_type == 'json':
-                    return json.dumps({"error": f"Operation failed: {error_message}"})
-                else:  # return_type == 'str' (default)
-                    return f"Error: {error_message}"
+            except MCPToolError:
+                raise
+            except Exception as exc:
+                error_message = str(exc)
+                formatted = _format_error_message(error_message, return_type)
+                raise MCPToolError(formatted) from exc
 
         return wrapper
     return decorator
@@ -88,7 +92,7 @@ def handle_mcp_tool_errors(return_type: str = 'str') -> Callable:
     which may return either strings or dictionaries.
 
     Args:
-        return_type: The expected return type ('str' or 'dict')
+        return_type: Label describing the successful payload shape (e.g. 'str', 'dict', 'list').
 
     Returns:
         Decorator function for MCP tools
@@ -101,3 +105,19 @@ def handle_mcp_tool_errors(return_type: str = 'str') -> Callable:
             return FileDiscoveryService(ctx).find_files(pattern)
     """
     return handle_mcp_errors(return_type=return_type)
+
+
+def _format_error_message(error_message: str, return_type: str) -> str:
+    """
+    Convert an exception message into a consistent string for MCP errors.
+
+    Args:
+        error_message: The raw exception message.
+        return_type: The declared return type for the decorated entry point.
+
+    Returns:
+        A string representation suitable for raising as MCPToolError.
+    """
+    if return_type in {'dict', 'json'}:
+        return f"Operation failed: {error_message}"
+    return f"Error: {error_message}"
