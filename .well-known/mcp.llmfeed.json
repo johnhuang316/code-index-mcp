@@ -6,7 +6,7 @@
             "id": "code-index",
             "name": "Code Index MCP",
             "description": "Exposes project-aware indexing, search, and file utilities for LLM agents via MCP transports.",
-            "version": "2.8.1",
+            "version": "2.9.0",
             "transport": "stdio",
             "command": "uv",
             "args": [
