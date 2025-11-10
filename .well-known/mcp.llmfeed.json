@@ -1,0 +1,32 @@
+{
+    "$schema": "https://modelcontextprotocol.io/schemas/mcp-llmfeed.json",
+    "feed_type": "mcp_server_list",
+    "servers": [
+        {
+            "id": "code-index",
+            "name": "Code Index MCP",
+            "description": "Exposes project-aware indexing, search, and file utilities for LLM agents via MCP transports.",
+            "version": "2.8.1",
+            "transport": "stdio",
+            "command": "uv",
+            "args": [
+                "run",
+                "code-index-mcp"
+            ],
+            "links": {
+                "documentation": "https://github.com/johnhuang316/code-index-mcp#readme",
+                "source": "https://github.com/johnhuang316/code-index-mcp"
+            },
+            "capabilities": [
+                "code-search",
+                "symbol-indexing",
+                "file-system"
+            ],
+            "tags": [
+                "fastmcp",
+                "code-intelligence",
+                "watcher"
+            ]
+        }
+    ]
+}

@@ -13,7 +13,7 @@ authors = [
     {name = "johnhuang316"}
 ]
 dependencies = [
-    "mcp>=0.3.0",
+    "mcp>=1.21.0,<2.0.0",
     "watchdog>=3.0.0",
     "tree-sitter>=0.20.0",
     "tree-sitter-javascript>=0.20.0",

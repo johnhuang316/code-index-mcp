@@ -130,16 +130,14 @@ mcp = FastMCP("CodeIndexer", lifespan=indexer_lifespan, dependencies=["pathlib"]
 
 @mcp.resource("config://code-indexer")
 @handle_mcp_resource_errors
-def get_config() -> str:
+def get_config(ctx: Context) -> str:
     """Get the current configuration of the Code Indexer."""
-    ctx = mcp.get_context()
     return ProjectManagementService(ctx).get_project_config()
 
 @mcp.resource("files://{file_path}")
 @handle_mcp_resource_errors
-def get_file_content(file_path: str) -> str:
+def get_file_content(file_path: str, ctx: Context) -> str:
     """Get the content of a specific file."""
-    ctx = mcp.get_context()
     # Use FileService for simple file reading - this is appropriate for a resource
     return FileService(ctx).get_file_content(file_path)
 
