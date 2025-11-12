@@ -105,6 +105,7 @@ Linux 與 macOS 預設會提供 `HOME` 與 XDG 路徑，因此通常不需要額
 - **50+ 種檔案類型使用備用策略**：C/C++、Rust、Ruby、PHP 和所有其他程式語言
 - **文件與配置檔案**：Markdown、JSON、YAML、XML 適當處理
 - **網頁前端**：Vue、React、Svelte、HTML、CSS、SCSS
+- **Java Web 與建置**：JSP/Tag (`.jsp`, `.jspx`, `.jspf`, `.tag`, `.tagx`)、Grails/GSP (`.gsp`)、Gradle/Groovy 腳本 (`.gradle`, `.groovy`)、`.properties`、Protocol Buffers (`.proto`)
 - **資料庫**：SQL 變體、NoSQL、存儲過程、遷移腳本
 - **配置檔案**：JSON、YAML、XML、Markdown
 - **[查看完整列表](#支援的檔案類型)**
@@ -161,6 +162,10 @@ Linux 與 macOS 預設會提供 `HOME` 與 XDG 路徑，因此通常不需要額
 - Handlebars (`.hbs`, `.handlebars`)
 - EJS (`.ejs`)
 - Pug (`.pug`)
+- FreeMarker (`.ftl`)
+- Mustache (`.mustache`)
+- Liquid (`.liquid`)
+- ERB (`.erb`)
 
 </details>
 
@@ -188,7 +193,7 @@ Linux 與 macOS 預設會提供 `HOME` 與 XDG 路徑，因此通常不需要額
 <summary><strong>📄 文件與配置（點擊展開）</strong></summary>
 
 - Markdown (`.md`, `.mdx`)
-- 配置 (`.json`, `.xml`, `.yml`, `.yaml`)
+- 配置 (`.json`, `.xml`, `.yml`, `.yaml`, `.properties`)
 
 </details>
 

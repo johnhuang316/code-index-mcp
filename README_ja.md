@@ -108,6 +108,7 @@ Linux と macOS では OS が `HOME` や XDG 系のパスを標準で公開し�
 - **50+ファイルタイプでフォールバック戦略**：C/C++、Rust、Ruby、PHPおよびすべての他のプログラミング言語
 - **文書・設定ファイル**：Markdown、JSON、YAML、XML適切な処理
 - **Webフロントエンド**：Vue、React、Svelte、HTML、CSS、SCSS
+- **Java Webとビルド**：JSP/タグファイル（`.jsp`, `.jspx`, `.jspf`, `.tag`, `.tagx`）、Grails/GSP（`.gsp`）、Gradle/Groovyスクリプト（`.gradle`, `.groovy`）、`.properties`、Protocol Buffers（`.proto`）
 - **データベース**：SQLバリアント、NoSQL、ストアドプロシージャ、マイグレーション
 - **設定ファイル**：JSON、YAML、XML、Markdown
 - **[完全なリストを表示](#サポートされているファイルタイプ)**
@@ -164,6 +165,10 @@ Linux と macOS では OS が `HOME` や XDG 系のパスを標準で公開し�
 - Handlebars (`.hbs`, `.handlebars`)
 - EJS (`.ejs`)
 - Pug (`.pug`)
+- FreeMarker (`.ftl`)
+- Mustache (`.mustache`)
+- Liquid (`.liquid`)
+- ERB (`.erb`)
 
 </details>
 
@@ -191,7 +196,7 @@ Linux と macOS では OS が `HOME` や XDG 系のパスを標準で公開し�
 <summary><strong>📄 ドキュメント・設定（クリックで展開）</strong></summary>
 
 - Markdown (`.md`, `.mdx`)
-- 設定 (`.json`, `.xml`, `.yml`, `.yaml`)
+- 設定 (`.json`, `.xml`, `.yml`, `.yaml`, `.properties`)
 
 </details>
 

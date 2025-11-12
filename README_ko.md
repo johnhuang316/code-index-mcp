@@ -107,6 +107,7 @@ Linux와 macOS는 운영체제가 `HOME`과 XDG 경로를 기본으로 제공하
 - **폴백 전략(50+ 형식):** C/C++, Rust, Ruby, PHP 등 대부분의 프로그래밍 언어 지원
 - **문서 및 설정 파일:** Markdown, JSON, YAML, XML 등 상황에 맞는 처리
 - **웹 프론트엔드:** Vue, React, Svelte, HTML, CSS, SCSS
+- **Java 웹 & 빌드:** JSP/태그 (`.jsp`, `.jspx`, `.jspf`, `.tag`, `.tagx`), Grails/GSP (`.gsp`), Gradle/Groovy 스크립트 (`.gradle`, `.groovy`), `.properties`, Protocol Buffers (`.proto`)
 - **데이터 계층:** SQL, NoSQL, 스토어드 프로시저, 마이그레이션 스크립트
 - **구성 파일:** JSON, YAML, XML, Markdown
 - **[지원 파일 전체 목록 보기](#지원-파일-형식)**
@@ -152,7 +153,7 @@ Linux와 macOS는 운영체제가 `HOME`과 XDG 경로를 기본으로 제공하
 
 - 프레임워크: Vue (`.vue`), Svelte (`.svelte`), Astro (`.astro`)
 - 스타일링: CSS (`.css`, `.scss`, `.less`, `.sass`, `.stylus`, `.styl`), HTML (`.html`)
-- 템플릿: Handlebars (`.hbs`, `.handlebars`), EJS (`.ejs`), Pug (`.pug`)
+- 템플릿: Handlebars (`.hbs`, `.handlebars`), EJS (`.ejs`), Pug (`.pug`), FreeMarker (`.ftl`), Mustache (`.mustache`), Liquid (`.liquid`), ERB (`.erb`)
 
 </details>
 
@@ -170,7 +171,7 @@ Linux와 macOS는 운영체제가 `HOME`과 XDG 경로를 기본으로 제공하
 <summary><strong>📄 문서 & 설정 파일</strong></summary>
 
 - Markdown (`.md`, `.mdx`)
-- 구성 파일 (`.json`, `.xml`, `.yml`, `.yaml`)
+- 구성 파일 (`.json`, `.xml`, `.yml`, `.yaml`, `.properties`)
 
 </details>
 

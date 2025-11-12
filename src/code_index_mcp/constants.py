@@ -56,10 +56,20 @@ SUPPORTED_EXTENSIONS = [
     '.svelte',                        # Svelte
     '.astro',                         # Astro
 
+    # Java web & build artifacts
+    '.jsp', '.jspx', '.jspf',         # JSP pages
+    '.tag', '.tagx',                  # JSP tag files
+    '.gsp',                           # Grails templates
+    '.properties',                    # Java .properties configs
+    '.gradle', '.groovy',             # Gradle/Groovy build scripts
+    '.proto',                         # Protocol Buffers
+
     # Template engines
     '.hbs', '.handlebars',            # Handlebars
     '.ejs',                           # EJS
     '.pug',                           # Pug
+    '.ftl',                           # FreeMarker
+    '.mustache', '.liquid', '.erb',   # Additional template engines
 
     # Database and SQL
     '.sql', '.ddl', '.dml',           # SQL

@@ -123,6 +123,7 @@ When sharing the manifests, remind consumers to supply `--project-path` (or to c
 - **50+ File Types with Fallback Strategy**: C/C++, Rust, Ruby, PHP, and all other programming languages
 - **Document & Config Files**: Markdown, JSON, YAML, XML with appropriate handling
 - **Web Frontend**: Vue, React, Svelte, HTML, CSS, SCSS
+- **Java Web & Build**: JSP/Tag files (`.jsp`, `.jspx`, `.jspf`, `.tag`, `.tagx`), Grails/GSP (`.gsp`), Gradle & Groovy builds (`.gradle`, `.groovy`), `.properties`, and Protocol Buffers (`.proto`)
 - **Database**: SQL variants, NoSQL, stored procedures, migrations
 - **Configuration**: JSON, YAML, XML, Markdown
 - **[View complete list](#supported-file-types)**
@@ -179,6 +180,10 @@ All other programming languages use the **FallbackParsingStrategy** which provid
 - Handlebars (`.hbs`, `.handlebars`)
 - EJS (`.ejs`)
 - Pug (`.pug`)
+- FreeMarker (`.ftl`)
+- Mustache (`.mustache`)
+- Liquid (`.liquid`)
+- ERB (`.erb`)
 
 </details>
 
@@ -206,7 +211,7 @@ All other programming languages use the **FallbackParsingStrategy** which provid
 <summary><strong>📄 Documentation & Config (Click to expand)</strong></summary>
 
 - Markdown (`.md`, `.mdx`)
-- Configuration (`.json`, `.xml`, `.yml`, `.yaml`)
+- Configuration (`.json`, `.xml`, `.yml`, `.yaml`, `.properties`)
 
 </details>
 
