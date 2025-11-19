@@ -220,8 +220,8 @@ def search_code_advanced(
     )
 
 @mcp.tool()
-@handle_mcp_tool_errors(return_type='list')
-def find_files(pattern: str, ctx: Context) -> List[str]:
+@handle_mcp_tool_errors(return_type='str')
+def find_files(pattern: str, ctx: Context) -> str:
     """
     Find files matching a glob pattern using pre-built file index.
 
@@ -236,14 +236,62 @@ def find_files(pattern: str, ctx: Context) -> List[str]:
     - Uses standard glob patterns (*, ?, [])
     - Fast lookup using in-memory file index
     - Uses forward slashes consistently across all platforms
+    - Automatically applies lenient search strategies (recursive, case-insensitive)
 
     Args:
         pattern: Glob pattern to match files (e.g., "*.py", "test_*.js", "README.md")
 
     Returns:
-        List of file paths matching the pattern
+        Formatted string with file list and match quality information
     """
-    return FileDiscoveryService(ctx).find_files(pattern)
+    search_result = FileDiscoveryService(ctx).find_files(pattern)
+    return _format_file_search_result(search_result)
+
+
+def _format_file_search_result(search_result) -> str:
+    """
+    Format FileSearchResult as a user-friendly string.
+    
+    Args:
+        search_result: FileSearchResult from the service layer
+        
+    Returns:
+        Formatted string with match information and file list
+    """
+    files = search_result.files
+    
+    if not files:
+        return f"No files found matching pattern '{search_result.original_pattern}'."
+    
+    # Build the message based on match type
+    message_parts = []
+    
+    if search_result.match_type == "exact":
+        message_parts.append(f"Found {len(files)} file(s) matching '{search_result.original_pattern}':")
+    elif search_result.match_type == "recursive":
+        message_parts.append(
+            f"Exact match for '{search_result.original_pattern}' did not yield any results. "
+            f"But found {len(files)} file(s) through a recursive search (pattern: '{search_result.applied_pattern}'):"
+        )
+    elif search_result.match_type == "case_insensitive_root":
+        message_parts.append(
+            f"Exact match for '{search_result.original_pattern}' did not yield any results. "
+            f"But found {len(files)} file(s) through a case-insensitive search:"
+        )
+    elif search_result.match_type == "case_insensitive_recursive":
+        message_parts.append(
+            f"Exact match for '{search_result.original_pattern}' did not yield any results. "
+            f"But found {len(files)} file(s) through a case-insensitive recursive search (pattern: '{search_result.applied_pattern}'):"
+        )
+    elif search_result.match_type == "all":
+        message_parts.append(f"All {len(files)} files in the project:")
+    else:
+        message_parts.append(f"Found {len(files)} file(s):")
+    
+    # Add file list
+    message_parts.append("\n".join(files))
+    
+    return "\n".join(message_parts)
 
 @mcp.tool()
 @handle_mcp_tool_errors(return_type='dict')

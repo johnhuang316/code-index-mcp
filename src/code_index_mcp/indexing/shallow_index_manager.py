@@ -14,13 +14,23 @@ import logging
 import os
 import tempfile
 import threading
-from typing import List, Optional
+from typing import List, Optional, Literal
+from dataclasses import dataclass
 import re
 
 from .json_index_builder import JSONIndexBuilder
 from ..constants import SETTINGS_DIR, INDEX_FILE_SHALLOW
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class FileSearchResult:
+    """Result of a file search operation with match quality information."""
+    files: List[str]
+    match_type: Literal["exact", "recursive", "case_insensitive_root", "case_insensitive_recursive", "all", "no_match", "invalid"]
+    original_pattern: str
+    applied_pattern: str
 
 
 class ShallowIndexManager:
@@ -102,19 +112,107 @@ class ShallowIndexManager:
         with self._lock:
             return list(self._file_list or [])
 
-    def find_files(self, pattern: str = "*") -> List[str]:
+    def find_files(self, pattern: str = "*") -> FileSearchResult:
+        """Find files matching the given pattern with lenient search fallbacks.
+        
+        Args:
+            pattern: Glob pattern to search for (e.g., "*.py", "test_*.js", "users.go")
+            
+        Returns:
+            FileSearchResult containing:
+            - files: List of matching file paths
+            - match_type: How the files were matched ("exact", "recursive", etc.)
+            - original_pattern: The pattern provided by the user
+            - applied_pattern: The actual pattern used to find matches
+        """
         with self._lock:
             if not isinstance(pattern, str):
-                return []
+                return FileSearchResult(
+                    files=[],
+                    match_type="invalid",
+                    original_pattern=pattern if isinstance(pattern, str) else str(pattern),
+                    applied_pattern=""
+                )
+            
+            original_pattern = pattern
             norm = (pattern.strip() or "*").replace('\\\\','/').replace('\\','/')
-            regex = self._compile_glob_regex(norm)
+            
+            # Normalize ./ prefix (common in file paths)
+            if norm.startswith('./'):
+                norm = norm[2:]
+            
             files = self._file_list or []
             if norm == "*":
-                return list(files)
-            return [f for f in files if regex.match(f) is not None]
+                return FileSearchResult(
+                    files=list(files),
+                    match_type="all",
+                    original_pattern=original_pattern,
+                    applied_pattern="*"
+                )
+            
+            # Try the pattern as-is first (case-sensitive)
+            regex = self._compile_glob_regex(norm)
+            results = [f for f in files if regex.match(f) is not None]
+            
+            if results:
+                return FileSearchResult(
+                    files=results,
+                    match_type="exact",
+                    original_pattern=original_pattern,
+                    applied_pattern=norm
+                )
+            
+            # Lenient search strategy:
+            # 1. If no results and pattern has no path separators, try recursive search
+            # 2. If still no results, try case-insensitive search (both original and recursive)
+            if '/' not in norm and not norm.startswith('**/'):
+                # Try adding **/ prefix to search recursively in all directories
+                lenient_pattern = '**/' + norm
+                lenient_regex = self._compile_glob_regex(lenient_pattern)
+                results = [f for f in files if lenient_regex.match(f) is not None]
+                
+                if results:
+                    return FileSearchResult(
+                        files=results,
+                        match_type="recursive",
+                        original_pattern=original_pattern,
+                        applied_pattern=lenient_pattern
+                    )
+                
+                # Try original pattern case-insensitive (for root files)
+                regex_ci = self._compile_glob_regex(norm, case_insensitive=True)
+                results = [f for f in files if regex_ci.match(f) is not None]
+                
+                if results:
+                    return FileSearchResult(
+                        files=results,
+                        match_type="case_insensitive_root",
+                        original_pattern=original_pattern,
+                        applied_pattern=f"{norm} (case-insensitive)"
+                    )
+                
+                # Try recursive pattern case-insensitive
+                lenient_regex_ci = self._compile_glob_regex(lenient_pattern, case_insensitive=True)
+                results = [f for f in files if lenient_regex_ci.match(f) is not None]
+                
+                if results:
+                    return FileSearchResult(
+                        files=results,
+                        match_type="case_insensitive_recursive",
+                        original_pattern=original_pattern,
+                        applied_pattern=f"{lenient_pattern} (case-insensitive)"
+                    )
+            
+            # No matches found with any strategy
+            return FileSearchResult(
+                files=[],
+                match_type="no_match",
+                original_pattern=original_pattern,
+                applied_pattern=norm
+            )
 
     @staticmethod
-    def _compile_glob_regex(pattern: str) -> re.Pattern:
+    def _compile_glob_regex(pattern: str, case_insensitive: bool = False) -> re.Pattern:
         i = 0
         out = []
         special = ".^$+{}[]|()"
@@ -134,7 +232,9 @@ class ShallowIndexManager:
             else:
                 out.append(c)
             i += 1
-        return re.compile('^' + ''.join(out) + '$')
+        
+        flags = re.IGNORECASE if case_insensitive else 0
+        return re.compile('^' + ''.join(out) + '$', flags)
 
     def cleanup(self) -> None:
         with self._lock:
