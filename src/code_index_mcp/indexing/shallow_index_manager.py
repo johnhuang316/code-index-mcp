@@ -107,14 +107,43 @@ class ShallowIndexManager:
             if not isinstance(pattern, str):
                 return []
             norm = (pattern.strip() or "*").replace('\\\\','/').replace('\\','/')
-            regex = self._compile_glob_regex(norm)
             files = self._file_list or []
+
+            # Fast path: wildcard all
             if norm == "*":
                 return list(files)
-            return [f for f in files if regex.match(f) is not None]
+
+            # 1) Exact, case-sensitive
+            exact_regex = self._compile_glob_regex(norm)
+            exact_hits = [f for f in files if exact_regex.match(f) is not None]
+            if exact_hits or '/' in norm:
+                return exact_hits
+
+            # 2) Recursive **/ fallback (case-sensitive)
+            recursive_pattern = f"**/{norm}"
+            rec_regex = self._compile_glob_regex(recursive_pattern)
+            rec_hits = [f for f in files if rec_regex.match(f) is not None]
+            if rec_hits:
+                return self._dedupe_preserve_order(exact_hits + rec_hits)
+
+            # 3) Case-insensitive (root only)
+            ci_regex = self._compile_glob_regex(norm, ignore_case=True)
+            ci_hits = [f for f in files if ci_regex.match(f) is not None]
+            if ci_hits:
+                return self._dedupe_preserve_order(exact_hits + rec_hits + ci_hits)
+
+            # 4) Case-insensitive recursive
+            rec_ci_regex = self._compile_glob_regex(recursive_pattern, ignore_case=True)
+            rec_ci_hits = [f for f in files if rec_ci_regex.match(f) is not None]
+            if rec_ci_hits:
+                return self._dedupe_preserve_order(
+                    exact_hits + rec_hits + ci_hits + rec_ci_hits
+                )
+
+            return []
 
     @staticmethod
-    def _compile_glob_regex(pattern: str) -> re.Pattern:
+    def _compile_glob_regex(pattern: str, ignore_case: bool = False) -> re.Pattern:
         i = 0
         out = []
         special = ".^$+{}[]|()"
@@ -134,7 +163,18 @@ class ShallowIndexManager:
             else:
                 out.append(c)
             i += 1
-        return re.compile('^' + ''.join(out) + '$')
+        flags = re.IGNORECASE if ignore_case else 0
+        return re.compile('^' + ''.join(out) + '$', flags=flags)
+
+    @staticmethod
+    def _dedupe_preserve_order(items: List[str]) -> List[str]:
+        seen = set()
+        result = []
+        for item in items:
+            if item not in seen:
+                seen.add(item)
+                result.append(item)
+        return result
 
     def cleanup(self) -> None:
         with self._lock:
@@ -151,5 +191,4 @@ _shallow_manager = ShallowIndexManager()
 
 def get_shallow_index_manager() -> ShallowIndexManager:
     return _shallow_manager
-
 
