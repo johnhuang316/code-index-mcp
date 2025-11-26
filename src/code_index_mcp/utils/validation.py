@@ -142,7 +142,10 @@ class ValidationHelper:
             try:
                 re.compile(pattern)
             except re.error as e:
-                return f"Invalid regex pattern: {str(e)}"
+                return (
+                    f"Invalid regex pattern: {str(e)}. "
+                    "If you intended a literal search, pass regex=False."
+                )
 
             # Check for potentially expensive regex patterns (basic ReDoS protection)
             dangerous_patterns = [
