@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "code-index-mcp"
-version = "2.9.2"
+version = "2.9.3"
 description = "Code indexing and analysis tools for LLMs using MCP"
 readme = "README.md"
 requires-python = ">=3.10"
