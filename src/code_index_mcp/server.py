@@ -141,7 +141,7 @@ def get_config() -> str:
     ctx = mcp.get_context()
     return ProjectManagementService(ctx).get_project_config()
 
-@mcp.resource("files://{file_path}")
+@mcp.resource("files://{file_path*}")
 @handle_mcp_resource_errors
 def get_file_content(file_path: str) -> str:
     """Get the content of a specific file."""
