@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from typing import AsyncIterator, Dict, Any, List, Optional
 
 # Third-party imports
-from mcp.server.fastmcp import FastMCP, Context
+from fastmcp import FastMCP, Context
 
 # Local imports
 from .project_settings import ProjectSettings
@@ -71,15 +71,6 @@ class _CLIConfig:
     project_path: str | None = None
 
 
-class _BootstrapRequestContext:
-    """Minimal request context to reuse business services during bootstrap."""
-
-    def __init__(self, lifespan_context: CodeIndexerContext):
-        self.lifespan_context = lifespan_context
-        self.session = None
-        self.meta = None
-
-
 _CLI_CONFIG = _CLIConfig()
 
 @asynccontextmanager
@@ -101,15 +92,30 @@ async def indexer_lifespan(_server: FastMCP) -> AsyncIterator[CodeIndexerContext
     try:
         # Bootstrap project path when provided via CLI.
         if _CLI_CONFIG.project_path:
-            bootstrap_ctx = Context(
-                request_context=_BootstrapRequestContext(context),
-                fastmcp=mcp
-            )
+            # Initialize project directly without using Context/Services
+            # since we're in lifespan and not in a request context
+            from .indexing import get_shallow_index_manager
+            
+            project_path = _CLI_CONFIG.project_path
             try:
-                message = ProjectManagementService(bootstrap_ctx).initialize_project(
-                    _CLI_CONFIG.project_path
-                )
-                logger.info("Project initialized from CLI flag: %s", message)
+                # Initialize settings with the project path
+                settings = ProjectSettings(project_path, skip_load=False)
+                context.base_path = project_path
+                context.settings = settings
+                
+                # Build shallow index
+                shallow_manager = get_shallow_index_manager()
+                if shallow_manager.set_project_path(project_path):
+                    shallow_manager.build_index()
+                    context.file_count = len(shallow_manager.get_file_list())
+                else:
+                    raise RuntimeError("Failed to set project path for shallow index")
+                
+                # Note: File watcher will be initialized on first tool call
+                # We can't initialize it here because FileWatcherService requires a Context
+                
+                logger.info("Project initialized from CLI flag: %s (%d files)", 
+                           project_path, context.file_count)
             except Exception as exc:  # pylint: disable=broad-except
                 logger.error("Failed to initialize project from CLI flag: %s", exc)
                 raise RuntimeError(
@@ -124,7 +130,7 @@ async def indexer_lifespan(_server: FastMCP) -> AsyncIterator[CodeIndexerContext
             context.file_watcher_service.stop_monitoring()
 
 # Create the MCP server with lifespan manager
-mcp = FastMCP("CodeIndexer", lifespan=indexer_lifespan, dependencies=["pathlib"])
+mcp = FastMCP("CodeIndexer", lifespan=indexer_lifespan)
 
 # ----- RESOURCES -----
 

@@ -7,7 +7,7 @@ operations that services need to perform with the context.
 
 import os
 from typing import Optional
-from mcp.server.fastmcp import Context
+from fastmcp import Context
 
 from ..project_settings import ProjectSettings
 

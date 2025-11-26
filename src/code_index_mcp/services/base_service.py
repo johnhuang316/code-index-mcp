@@ -7,7 +7,7 @@ ensuring consistent behavior and shared functionality across the service layer.
 
 from abc import ABC
 from typing import Optional
-from mcp.server.fastmcp import Context
+from fastmcp import Context
 
 from ..utils import ContextHelper, ValidationHelper
 

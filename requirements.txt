@@ -1,4 +1,4 @@
-mcp>=0.3.0
+fastmcp>2.2.4
 watchdog>=3.0.0
 protobuf>=4.21.0
 tree-sitter>=0.20.0
