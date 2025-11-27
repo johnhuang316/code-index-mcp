@@ -16,6 +16,7 @@ import logging
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import AsyncIterator, Dict, Any, List, Optional
+from urllib.parse import unquote
 
 # Third-party imports
 from mcp.server.fastmcp import FastMCP, Context
@@ -123,6 +124,15 @@ async def indexer_lifespan(_server: FastMCP) -> AsyncIterator[CodeIndexerContext
 
 # Create the MCP server with lifespan manager
 mcp = FastMCP("CodeIndexer", lifespan=indexer_lifespan, dependencies=["pathlib"])
+
+# ----- RESOURCES -----
+
+@mcp.resource("files://{file_path}")
+def get_file_content(file_path: str) -> str:
+    """Get the content of a specific file."""
+    decoded_path = unquote(file_path)
+    ctx = mcp.get_context()
+    return FileService(ctx).get_file_content(decoded_path)
 
 # ----- TOOLS -----
 
