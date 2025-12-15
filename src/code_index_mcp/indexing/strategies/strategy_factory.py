@@ -9,6 +9,7 @@ from .python_strategy import PythonParsingStrategy
 from .javascript_strategy import JavaScriptParsingStrategy
 from .typescript_strategy import TypeScriptParsingStrategy
 from .java_strategy import JavaParsingStrategy
+from .kotlin_strategy import KotlinParsingStrategy
 from .go_strategy import GoParsingStrategy
 from .objective_c_strategy import ObjectiveCParsingStrategy
 from .zig_strategy import ZigParsingStrategy
@@ -120,6 +121,11 @@ class StrategyFactory:
                 java_strategy = JavaParsingStrategy()
                 for ext in java_strategy.get_supported_extensions():
                     self._strategies[ext] = java_strategy
+
+                # Kotlin
+                kotlin_strategy = KotlinParsingStrategy()
+                for ext in kotlin_strategy.get_supported_extensions():
+                    self._strategies[ext] = kotlin_strategy
 
                 # Go
                 go_strategy = GoParsingStrategy()
