@@ -132,7 +132,6 @@ class StrategyFactory:
                 csharp_strategy = CSharpParsingStrategy()
                 for ext in csharp_strategy.get_supported_extensions():
                     self._strategies[ext] = csharp_strategy
-
                 # Go
                 go_strategy = GoParsingStrategy()
                 for ext in go_strategy.get_supported_extensions():
