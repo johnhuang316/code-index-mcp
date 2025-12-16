@@ -10,6 +10,7 @@ from .javascript_strategy import JavaScriptParsingStrategy
 from .typescript_strategy import TypeScriptParsingStrategy
 from .java_strategy import JavaParsingStrategy
 from .kotlin_strategy import KotlinParsingStrategy
+from .csharp_strategy import CSharpParsingStrategy
 from .go_strategy import GoParsingStrategy
 from .objective_c_strategy import ObjectiveCParsingStrategy
 from .zig_strategy import ZigParsingStrategy
@@ -126,6 +127,11 @@ class StrategyFactory:
                 kotlin_strategy = KotlinParsingStrategy()
                 for ext in kotlin_strategy.get_supported_extensions():
                     self._strategies[ext] = kotlin_strategy
+
+                # C#
+                csharp_strategy = CSharpParsingStrategy()
+                for ext in csharp_strategy.get_supported_extensions():
+                    self._strategies[ext] = csharp_strategy
 
                 # Go
                 go_strategy = GoParsingStrategy()

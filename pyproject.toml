@@ -20,6 +20,7 @@ dependencies = [
     "tree-sitter-typescript>=0.20.0",
     "tree-sitter-java>=0.20.0",
     "tree-sitter-kotlin>=0.3.0",
+    "tree-sitter-c-sharp>=0.20.0",
     "tree-sitter-zig>=0.20.0",
     "pathspec>=0.12.1",
     "msgpack>=1.0.0",
