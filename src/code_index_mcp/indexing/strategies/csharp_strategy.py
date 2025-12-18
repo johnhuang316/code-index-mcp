@@ -165,10 +165,12 @@ class CSharpParsingStrategy(ParsingStrategy):
             new_namespace = namespace_parts
             if ns_name:
                 ns_clean = self._strip_generics(ns_name)
-                new_namespace = namespace_parts + [ns_clean]
-                context.last_namespace = ".".join(new_namespace)
                 if node_type == "file_scoped_namespace_declaration":
+                    new_namespace = [seg for seg in ns_clean.split(".") if seg]
                     context.global_namespace_parts = new_namespace
+                else:
+                    new_namespace = namespace_parts + [ns_clean]
+                context.last_namespace = ".".join(new_namespace)
 
             for child in node.children:
                 self._traverse_node(child, context, new_namespace, type_stack, current_function)
@@ -188,6 +190,7 @@ class CSharpParsingStrategy(ParsingStrategy):
                 context.symbol_lookup[full_type_name] = symbol_id
                 context.symbol_lookup[clean_name] = symbol_id
                 context.classes.append(full_type_name)
+                self._resolve_pending_calls(context)
 
                 for child in node.children:
                     self._traverse_node(
@@ -224,6 +227,7 @@ class CSharpParsingStrategy(ParsingStrategy):
                     context.symbol_lookup[f"{full_type}.{clean_name}"] = symbol_id
 
                 context.functions.append(full_name)
+                self._resolve_pending_calls(context)
 
                 for child in node.children:
                     self._traverse_node(
@@ -254,6 +258,7 @@ class CSharpParsingStrategy(ParsingStrategy):
                 context.symbol_lookup[f"{type_name}.#ctor"] = symbol_id
                 context.symbol_lookup[type_name] = context.symbol_lookup.get(type_name, symbol_id)
                 context.functions.append(ctor_full_name)
+                self._resolve_pending_calls(context)
 
                 for child in node.children:
                     self._traverse_node(
@@ -282,6 +287,7 @@ class CSharpParsingStrategy(ParsingStrategy):
                 context.symbol_lookup[full_name] = symbol_id
                 context.symbol_lookup[clean_name] = symbol_id
                 context.functions.append(full_name)
+                self._resolve_pending_calls(context)
 
                 for child in node.children:
                     self._traverse_node(
@@ -433,6 +439,38 @@ class CSharpParsingStrategy(ParsingStrategy):
             if key not in context.pending_call_set:
                 context.pending_call_set.add(key)
                 context.pending_calls.append(key)
+
+    def _resolve_pending_calls(self, context: TraversalContext) -> None:
+        """Resolve any queued calls now that new symbols are registered."""
+        if not context.pending_calls:
+            return
+
+        remaining: List[Tuple[str, str]] = []
+        for caller, called in context.pending_calls:
+            resolved = False
+
+            if called in context.symbol_lookup:
+                symbol_id = context.symbol_lookup[called]
+                symbol_info = context.symbols.get(symbol_id)
+                if symbol_info and caller not in symbol_info.called_by:
+                    symbol_info.called_by.append(caller)
+                resolved = True
+            else:
+                suffix_matches = [
+                    sid for name, sid in context.symbol_lookup.items() if name.endswith(f".{called}")
+                ]
+                if len(suffix_matches) == 1:
+                    target_id = suffix_matches[0]
+                    symbol_info = context.symbols.get(target_id)
+                    if symbol_info and caller not in symbol_info.called_by:
+                        symbol_info.called_by.append(caller)
+                    resolved = True
+
+            if not resolved:
+                remaining.append((caller, called))
+
+        context.pending_calls = remaining
+        context.pending_call_set = set(remaining)
 
     # Small string utilities --------------------------------------------
     def _strip_generics(self, name: str) -> str:
