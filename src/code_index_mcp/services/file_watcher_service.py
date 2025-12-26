@@ -4,6 +4,12 @@ File Watcher Service for automatic index rebuilds.
 This module provides file system monitoring capabilities that automatically
 trigger index rebuilds when relevant files are modified, created, or deleted.
 It uses the watchdog library for cross-platform file system event monitoring.
+
+On macOS, this module defaults to using KqueueObserver instead of FSEventsObserver
+due to known reliability issues with FSEvents. To avoid opening excessive file
+descriptors (kqueue opens one per file when using recursive watching), the watcher
+schedules non-recursive watches on each non-excluded directory rather than a
+single recursive watch on the project root.
 """
 # pylint: disable=missing-function-docstring  # Fallback stub methods don't need docstrings
 
@@ -101,6 +107,7 @@ if not WATCHDOG_AVAILABLE:
 
 from .base_service import BaseService
 from ..constants import SUPPORTED_EXTENSIONS
+from ..utils import FileFilter
 
 
 class FileWatcherService(BaseService):
@@ -133,6 +140,66 @@ class FileWatcherService(BaseService):
         if not WATCHDOG_AVAILABLE:
             self.logger.warning("Watchdog library not available - file watcher disabled")
 
+    def _is_kqueue_observer(self, observer_class: Type) -> bool:
+        """Check if the observer class is KqueueObserver.
+
+        Args:
+            observer_class: The observer class to check
+
+        Returns:
+            True if it's a KqueueObserver, False otherwise
+        """
+        return observer_class.__name__ == 'KqueueObserver'
+
+    def _collect_watch_directories(self, base_path: Path, file_filter: FileFilter) -> List[Path]:
+        """Walk directory tree, skip excluded dirs, return list of dirs to watch.
+
+        This method is used for kqueue observer to avoid opening excessive file
+        descriptors. Instead of watching the entire tree recursively (which opens
+        an FD per file), we watch each non-excluded directory non-recursively.
+
+        Args:
+            base_path: The project root directory
+            file_filter: FileFilter instance for determining exclusions
+
+        Returns:
+            List of directory paths that should be watched
+        """
+        dirs_to_watch = [base_path]
+
+        for root, dirs, _files in os.walk(base_path):
+            # Modify dirs in-place to prevent os.walk from descending into excluded dirs
+            dirs[:] = [d for d in dirs if not file_filter.should_exclude_directory(d)]
+
+            for d in dirs:
+                dirs_to_watch.append(Path(root) / d)
+
+        return dirs_to_watch
+
+    def _schedule_watches(self, observer, event_handler, base_path: Path,
+                          file_filter: FileFilter, use_per_directory: bool) -> int:
+        """Schedule watches on the observer.
+
+        Args:
+            observer: The watchdog observer instance
+            event_handler: The event handler for file system events
+            base_path: The project root directory
+            file_filter: FileFilter instance for determining exclusions
+            use_per_directory: If True, schedule non-recursive watches per directory
+                              (for kqueue). If False, schedule one recursive watch.
+
+        Returns:
+            Number of directories being watched
+        """
+        if use_per_directory:
+            dirs_to_watch = self._collect_watch_directories(base_path, file_filter)
+            for dir_path in dirs_to_watch:
+                observer.schedule(event_handler, str(dir_path), recursive=False)
+            return len(dirs_to_watch)
+        else:
+            observer.schedule(event_handler, str(base_path), recursive=True)
+            return 1
+
     def start_monitoring(self, rebuild_callback: Callable) -> bool:
         """
         Start file system monitoring.
@@ -163,27 +230,39 @@ class FileWatcherService(BaseService):
         config = self.settings.get_file_watcher_config()
         debounce_seconds = config.get('debounce_seconds', 6.0)
         observer_type = config.get('observer_type', 'auto')
+        additional_excludes = config.get('additional_exclude_patterns', [])
+
+        # Create file filter for directory exclusions
+        file_filter = FileFilter(additional_excludes)
 
         try:
             ObserverClass = _get_observer_class(observer_type)
             self.observer = ObserverClass()
-            self.logger.info("Using %s observer (type=%s)", ObserverClass.__name__, observer_type)
+            use_per_directory = self._is_kqueue_observer(ObserverClass)
+
+            self.logger.info("Using %s observer (type=%s, per_directory=%s)",
+                           ObserverClass.__name__, observer_type, use_per_directory)
+
             self.event_handler = DebounceEventHandler(
                 debounce_seconds=debounce_seconds,
                 rebuild_callback=self.rebuild_callback,
                 base_path=Path(self.base_path),
-                logger=self.logger
+                logger=self.logger,
+                additional_excludes=additional_excludes,
+                watcher_service=self
             )
 
-            # Log detailed Observer setup
-            watch_path = str(self.base_path)
-            self.logger.debug("Scheduling Observer for path: %s", watch_path)
-
-            self.observer.schedule(
-                self.event_handler,
-                watch_path,
-                recursive=True
+            # Schedule watches - per-directory for kqueue, recursive for others
+            base_path = Path(self.base_path)
+            watch_count = self._schedule_watches(
+                self.observer, self.event_handler, base_path,
+                file_filter, use_per_directory
             )
+
+            if use_per_directory:
+                self.logger.info("Scheduled %d directories for kqueue watching", watch_count)
+            else:
+                self.logger.debug("Scheduled recursive watch for path: %s", self.base_path)
 
             # Log Observer start
             self.logger.debug("Starting Observer...")
@@ -202,6 +281,7 @@ class FileWatcherService(BaseService):
                     extra={
                         "debounce_seconds": debounce_seconds,
                         "monitored_path": str(self.base_path),
+                        "watch_count": watch_count,
                         "supported_extensions": len(SUPPORTED_EXTENSIONS)
                     }
                 )
@@ -248,10 +328,14 @@ class FileWatcherService(BaseService):
                 self.logger.debug("Stopping observer...")
                 self.observer.stop()
 
-                # Step 2: Cancel any active debounce timer
-                if self.event_handler and self.event_handler.debounce_timer:
-                    self.logger.debug("Cancelling debounce timer...")
-                    self.event_handler.debounce_timer.cancel()
+                # Step 2: Cancel any active timers
+                if self.event_handler:
+                    if self.event_handler.debounce_timer:
+                        self.logger.debug("Cancelling debounce timer...")
+                        self.event_handler.debounce_timer.cancel()
+                    if self.event_handler.restart_timer:
+                        self.logger.debug("Cancelling restart timer...")
+                        self.event_handler.restart_timer.cancel()
 
                 # Step 3: Wait for observer thread to finish (with timeout)
                 self.logger.debug("Waiting for observer thread to finish...")
@@ -318,17 +402,29 @@ class FileWatcherService(BaseService):
         try:
             config = self.settings.get_file_watcher_config()
             observer_type = config.get('observer_type', 'auto')
+            additional_excludes = config.get('additional_exclude_patterns', [])
+
             ObserverClass = _get_observer_class(observer_type)
             self.observer = ObserverClass()
-            self.observer.schedule(
-                self.event_handler,
-                str(self.base_path),
-                recursive=True
+            use_per_directory = self._is_kqueue_observer(ObserverClass)
+
+            # Create file filter and schedule watches
+            file_filter = FileFilter(additional_excludes)
+            base_path = Path(self.base_path)
+            watch_count = self._schedule_watches(
+                self.observer, self.event_handler, base_path,
+                file_filter, use_per_directory
             )
+
             self.observer.start()
             self.is_monitoring = True
 
-            self.logger.info("File watcher restarted successfully with %s", ObserverClass.__name__)
+            if use_per_directory:
+                self.logger.info("File watcher restarted with %s (%d directories)",
+                               ObserverClass.__name__, watch_count)
+            else:
+                self.logger.info("File watcher restarted successfully with %s",
+                               ObserverClass.__name__)
             return True
 
         except Exception as e:
@@ -371,11 +467,14 @@ class DebounceEventHandler(FileSystemEventHandler):
 
     This handler filters file system events to only relevant files and
     implements a debounce mechanism to batch rapid changes into single
-    rebuild operations.
+    rebuild operations. When new non-excluded directories are created,
+    it triggers a debounced watcher restart to pick them up.
     """
 
     def __init__(self, debounce_seconds: float, rebuild_callback: Callable,
-                 base_path: Path, logger: logging.Logger, additional_excludes: Optional[List[str]] = None):
+                 base_path: Path, logger: logging.Logger,
+                 additional_excludes: Optional[List[str]] = None,
+                 watcher_service: Optional['FileWatcherService'] = None):
         """
         Initialize the debounce event handler.
 
@@ -385,15 +484,16 @@ class DebounceEventHandler(FileSystemEventHandler):
             base_path: Base project path for filtering
             logger: Logger instance for debug messages
             additional_excludes: Additional patterns to exclude
+            watcher_service: Reference to parent FileWatcherService for restart callbacks
         """
-        from ..utils import FileFilter
-        
         super().__init__()
         self.debounce_seconds = debounce_seconds
         self.rebuild_callback = rebuild_callback
         self.base_path = base_path
         self.debounce_timer: Optional[Timer] = None
+        self.restart_timer: Optional[Timer] = None
         self.logger = logger
+        self.watcher_service = watcher_service
 
         # Use centralized file filtering
         self.file_filter = FileFilter(additional_excludes)
@@ -405,6 +505,11 @@ class DebounceEventHandler(FileSystemEventHandler):
         Args:
             event: The file system event
         """
+        # Handle new directory creation - may need watcher restart for kqueue
+        if event.is_directory and event.event_type == 'created':
+            self._handle_directory_created(event.src_path)
+            return
+
         # Check if event should be processed
         should_process = self.should_process_event(event)
 
@@ -414,6 +519,60 @@ class DebounceEventHandler(FileSystemEventHandler):
         else:
             # Only log at debug level for filtered events
             self.logger.debug("Filtered: %s - %s", event.event_type, event.src_path)
+
+    def _handle_directory_created(self, dir_path: str) -> None:
+        """Handle a new directory being created.
+
+        For kqueue observer, new directories need to be watched explicitly.
+        This triggers a debounced watcher restart to pick up the new directory.
+
+        Args:
+            dir_path: Path to the newly created directory
+        """
+        if not self.watcher_service:
+            # No watcher service reference, can't restart
+            self.logger.debug("Directory created but no watcher_service: %s", dir_path)
+            return
+
+        # Check if directory should be excluded
+        dir_name = Path(dir_path).name
+        if self.file_filter.should_exclude_directory(dir_name):
+            self.logger.debug("New directory excluded, not restarting watcher: %s", dir_path)
+            return
+
+        self.logger.info("New directory detected, scheduling watcher restart: %s", dir_path)
+        self._reset_restart_timer()
+
+    def _reset_restart_timer(self) -> None:
+        """Reset the restart timer, canceling any existing timer.
+
+        Uses the same debounce timing as rebuilds to batch rapid directory creations
+        (e.g., mkdir -p a/b/c/d) into a single watcher restart.
+        """
+        if self.restart_timer:
+            self.restart_timer.cancel()
+
+        self.restart_timer = Timer(
+            self.debounce_seconds,
+            self._trigger_restart
+        )
+        self.restart_timer.start()
+
+    def _trigger_restart(self) -> None:
+        """Trigger watcher restart after debounce period."""
+        self.logger.info("Restarting watcher to pick up new directories")
+
+        if self.watcher_service:
+            try:
+                # Reset restart attempts since this is intentional, not an error recovery
+                self.watcher_service.restart_attempts = 0
+                self.watcher_service.restart_observer()
+            except Exception as e:
+                self.logger.error("Watcher restart failed: %s", e)
+                traceback_msg = traceback.format_exc()
+                self.logger.error("Traceback: %s", traceback_msg)
+        else:
+            self.logger.warning("No watcher_service configured for restart")
 
     def should_process_event(self, event: FileSystemEvent) -> bool:
         """
