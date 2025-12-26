@@ -384,6 +384,21 @@ If automatic index updates aren't working when files change, try:
 - Use manual refresh: Call the `refresh_index` tool after making file changes
 - Check file watcher status: Use `get_file_watcher_status` to verify monitoring is active
 
+### 🍎 **macOS File Watcher Issues**
+
+On macOS, code-index-mcp defaults to the kqueue observer instead of FSEvents for better reliability. If you're monitoring large projects and encounter "too many open files" errors:
+
+```bash
+# Increase file descriptor limit (add to ~/.zshrc or ~/.bashrc)
+ulimit -n 10240
+```
+
+You can configure the observer type via `configure_file_watcher`:
+- `"auto"` (default): kqueue on macOS, platform default elsewhere
+- `"kqueue"`: Force kqueue observer
+- `"fsevents"`: Force FSEvents (has known reliability issues)
+- `"polling"`: Cross-platform polling fallback
+
 ## Development & Contributing
 
 ### 🔧 **Building from Source**
