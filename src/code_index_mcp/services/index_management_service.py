@@ -9,7 +9,7 @@ import logging
 import os
 import json
 
-from typing import Dict, Any
+from typing import Dict, Any, List
 from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
@@ -59,8 +59,11 @@ class IndexManagementService(BaseService):
         # Business validation
         self._validate_rebuild_request()
 
+        # Get user-configured exclude patterns
+        excludes = self._get_exclude_patterns()
+
         # Shallow rebuild only (fast path)
-        if not self._shallow_manager.set_project_path(self.base_path):
+        if not self._shallow_manager.set_project_path(self.base_path, excludes):
             raise RuntimeError("Failed to set project path (shallow) in index manager")
         if not self._shallow_manager.build_index():
             raise RuntimeError("Failed to rebuild shallow index")
@@ -110,6 +113,25 @@ class IndexManagementService(BaseService):
         # Business rule: Project must be set up
         self._require_project_setup()
 
+    def _get_exclude_patterns(self) -> List[str]:
+        """Read exclude patterns from project settings for indexing.
+
+        Returns:
+            List of directory/file patterns to exclude from indexing
+        """
+        patterns: List[str] = []
+        if not self.settings:
+            return patterns
+        try:
+            config = self.settings.get_file_watcher_config()
+            for key in ('exclude_patterns', 'additional_exclude_patterns'):
+                for pattern in config.get(key) or []:
+                    if isinstance(pattern, str) and pattern.strip():
+                        patterns.append(pattern.strip())
+        except Exception:  # noqa: BLE001 - fallback if config fails
+            pass
+        return patterns
+
     def _execute_rebuild_workflow(self) -> IndexRebuildResult:
         """
         Execute the core index rebuild business workflow.
@@ -119,8 +141,11 @@ class IndexManagementService(BaseService):
         """
         start_time = time.time()
 
-        # Set project path in index manager
-        if not self._index_manager.set_project_path(self.base_path):
+        # Get user-configured exclude patterns
+        excludes = self._get_exclude_patterns()
+
+        # Set project path in index manager with exclusions
+        if not self._index_manager.set_project_path(self.base_path, excludes):
             raise RuntimeError("Failed to set project path in index manager")
 
         # Rebuild the index
@@ -166,8 +191,11 @@ class IndexManagementService(BaseService):
         # Ensure project is set up
         self._require_project_setup()
 
-        # Initialize manager with current base path
-        if not self._shallow_manager.set_project_path(self.base_path):
+        # Get user-configured exclude patterns
+        excludes = self._get_exclude_patterns()
+
+        # Initialize manager with current base path and exclusions
+        if not self._shallow_manager.set_project_path(self.base_path, excludes):
             raise RuntimeError("Failed to set project path in index manager")
 
         # Build shallow index
