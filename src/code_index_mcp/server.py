@@ -324,10 +324,22 @@ def configure_file_watcher(
     ctx: Context,
     enabled: bool = None,
     debounce_seconds: float = None,
-    additional_exclude_patterns: list = None
+    additional_exclude_patterns: list = None,
+    observer_type: str = None
 ) -> str:
-    """Configure file watcher service settings."""
-    return SystemManagementService(ctx).configure_file_watcher(enabled, debounce_seconds, additional_exclude_patterns)
+    """Configure file watcher service settings.
+
+    Args:
+        enabled: Whether to enable file watcher
+        debounce_seconds: Debounce time in seconds before triggering rebuild
+        additional_exclude_patterns: Additional directory/file patterns to exclude
+        observer_type: Observer backend to use. Options:
+            - "auto" (default): kqueue on macOS for reliability, platform default elsewhere
+            - "kqueue": Force kqueue observer (macOS/BSD)
+            - "fsevents": Force FSEvents observer (macOS only, has known reliability issues)
+            - "polling": Cross-platform polling fallback (slower but most compatible)
+    """
+    return SystemManagementService(ctx).configure_file_watcher(enabled, debounce_seconds, additional_exclude_patterns, observer_type)
 
 # ----- PROMPTS -----
 # Removed: analyze_code, code_search, set_project prompts
