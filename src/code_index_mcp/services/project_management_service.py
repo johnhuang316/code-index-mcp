@@ -5,7 +5,7 @@ This service handles the business logic for project initialization, configuratio
 and lifecycle management using the new JSON-based indexing system.
 """
 import logging
-from typing import Dict, Any
+from typing import Dict, Any, List
 from dataclasses import dataclass
 from contextlib import contextmanager
 
@@ -53,6 +53,25 @@ class ProjectManagementService(BaseService):
     @contextmanager
     def _noop_operation(self, *_args, **_kwargs):
         yield
+
+    def _get_exclude_patterns(self) -> List[str]:
+        """Read exclude patterns from project settings for indexing.
+
+        Returns:
+            List of directory/file patterns to exclude from indexing
+        """
+        patterns: List[str] = []
+        if not self.settings:
+            return patterns
+        try:
+            config = self.settings.get_file_watcher_config()
+            for key in ('exclude_patterns', 'additional_exclude_patterns'):
+                for pattern in config.get(key) or []:
+                    if isinstance(pattern, str) and pattern.strip():
+                        patterns.append(pattern.strip())
+        except Exception:  # noqa: BLE001 - fallback if config fails
+            pass
+        return patterns
 
     def initialize_project(self, path: str) -> str:
         """
@@ -160,8 +179,11 @@ class ProjectManagementService(BaseService):
         Returns:
             Dictionary with initialization results
         """
-        # Set project path in shallow manager
-        if not self._shallow_manager.set_project_path(project_path):
+        # Get user-configured exclude patterns
+        excludes = self._get_exclude_patterns()
+
+        # Set project path in shallow manager with exclusions
+        if not self._shallow_manager.set_project_path(project_path, excludes):
             raise RuntimeError(f"Failed to set project path (shallow): {project_path}")
 
         # Update context
