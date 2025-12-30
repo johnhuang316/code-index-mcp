@@ -63,7 +63,8 @@ class SystemManagementService(BaseService):
 
     def configure_file_watcher(self, enabled: Optional[bool] = None,
                              debounce_seconds: Optional[float] = None,
-                             additional_exclude_patterns: Optional[list] = None) -> str:
+                             additional_exclude_patterns: Optional[list] = None,
+                             observer_type: Optional[str] = None) -> str:
         """
         Configure file watcher settings with business validation.
 
@@ -71,6 +72,7 @@ class SystemManagementService(BaseService):
             enabled: Whether to enable file watcher
             debounce_seconds: Debounce time in seconds
             additional_exclude_patterns: Additional patterns to exclude
+            observer_type: Observer backend type ("auto", "kqueue", "fsevents", "polling")
 
         Returns:
             Success message with configuration details
@@ -79,10 +81,10 @@ class SystemManagementService(BaseService):
             ValueError: If configuration is invalid
         """
         # Business validation
-        self._validate_configuration_request(enabled, debounce_seconds, additional_exclude_patterns)
+        self._validate_configuration_request(enabled, debounce_seconds, additional_exclude_patterns, observer_type)
 
         # Business workflow: Apply configuration
-        result = self._apply_file_watcher_configuration(enabled, debounce_seconds, additional_exclude_patterns)
+        result = self._apply_file_watcher_configuration(enabled, debounce_seconds, additional_exclude_patterns, observer_type)
 
         return result
 
@@ -289,7 +291,8 @@ class SystemManagementService(BaseService):
 
     def _validate_configuration_request(self, enabled: Optional[bool],
                                       debounce_seconds: Optional[float],
-                                      additional_exclude_patterns: Optional[list]) -> None:
+                                      additional_exclude_patterns: Optional[list],
+                                      observer_type: Optional[str]) -> None:
         """
         Business validation for file watcher configuration.
 
@@ -297,6 +300,7 @@ class SystemManagementService(BaseService):
             enabled: Enable flag
             debounce_seconds: Debounce time
             additional_exclude_patterns: Exclude patterns
+            observer_type: Observer backend type
 
         Raises:
             ValueError: If validation fails
@@ -323,9 +327,16 @@ class SystemManagementService(BaseService):
                 if not pattern.strip():
                     raise ValueError("Exclude patterns cannot be empty")
 
+        # Business rule: Observer type must be valid
+        if observer_type is not None:
+            valid_types = ('auto', 'kqueue', 'fsevents', 'polling')
+            if observer_type not in valid_types:
+                raise ValueError(f"observer_type must be one of: {valid_types}")
+
     def _apply_file_watcher_configuration(self, enabled: Optional[bool],
                                         debounce_seconds: Optional[float],
-                                        additional_exclude_patterns: Optional[list]) -> str:
+                                        additional_exclude_patterns: Optional[list],
+                                        observer_type: Optional[str]) -> str:
         """
         Business logic to apply file watcher configuration.
 
@@ -333,6 +344,7 @@ class SystemManagementService(BaseService):
             enabled: Enable flag
             debounce_seconds: Debounce time
             additional_exclude_patterns: Exclude patterns
+            observer_type: Observer backend type
 
         Returns:
             Success message
@@ -355,6 +367,8 @@ class SystemManagementService(BaseService):
             updates["debounce_seconds"] = debounce_seconds
         if additional_exclude_patterns is not None:
             updates["additional_exclude_patterns"] = additional_exclude_patterns
+        if observer_type is not None:
+            updates["observer_type"] = observer_type
 
         if not updates:
             return "No configuration changes specified"
@@ -371,6 +385,8 @@ class SystemManagementService(BaseService):
         if 'additional_exclude_patterns' in updates:
             pattern_count = len(updates['additional_exclude_patterns'])
             changes_summary.append(f"exclude_patterns={pattern_count}")
+        if 'observer_type' in updates:
+            changes_summary.append(f"observer_type={updates['observer_type']}")
 
         changes_str = ", ".join(changes_summary)
 

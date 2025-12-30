@@ -384,6 +384,17 @@ If automatic index updates aren't working when files change, try:
 - Use manual refresh: Call the `refresh_index` tool after making file changes
 - Check file watcher status: Use `get_file_watcher_status` to verify monitoring is active
 
+### **macOS File Watcher Options**
+
+The default FSEvents observer works well for most projects. If you experience issues, you can switch to an alternative observer via `configure_file_watcher`:
+
+- `"auto"` (default): Platform default (FSEvents on macOS)
+- `"kqueue"`: Kqueue observer (macOS/BSD)
+- `"fsevents"`: Force FSEvents (macOS only)
+- `"polling"`: Cross-platform polling fallback
+
+Note: Kqueue opens one file descriptor per watched file. For large projects using kqueue, you may need to increase the limit: `ulimit -n 10240`
+
 ## Development & Contributing
 
 ### 🔧 **Building from Source**

@@ -35,8 +35,17 @@ class SQLiteIndexManager:
         self._lock = threading.RLock()
         logger.info("Initialized SQLite Index Manager")
 
-    def set_project_path(self, project_path: str) -> bool:
-        """Configure project path and underlying storage location."""
+    def set_project_path(self, project_path: str, additional_excludes: Optional[List[str]] = None) -> bool:
+        """Configure project path and underlying storage location.
+
+        Args:
+            project_path: Path to the project directory to index
+            additional_excludes: Optional list of additional directory/file
+                patterns to exclude from indexing (e.g., ['vendor', 'custom_deps'])
+
+        Returns:
+            True if configuration succeeded, False otherwise
+        """
         with self._lock:
             if not project_path or not isinstance(project_path, str):
                 logger.error("Invalid project path: %s", project_path)
@@ -63,9 +72,11 @@ class SQLiteIndexManager:
 
             self.shallow_index_path = os.path.join(self.temp_dir, INDEX_FILE_SHALLOW)
             self.store = SQLiteIndexStore(self.index_path)
-            self.index_builder = SQLiteIndexBuilder(project_path, self.store)
+            self.index_builder = SQLiteIndexBuilder(project_path, self.store, additional_excludes)
             self._is_loaded = False
             logger.info("SQLite index storage: %s", self.index_path)
+            if additional_excludes:
+                logger.info("Additional excludes: %s", additional_excludes)
             return True
 
     def build_index(self, force_rebuild: bool = False) -> bool:

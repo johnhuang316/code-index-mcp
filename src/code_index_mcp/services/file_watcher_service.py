@@ -9,16 +9,62 @@ It uses the watchdog library for cross-platform file system event monitoring.
 
 import logging
 import os
+import platform
 import traceback
 from threading import Timer
-from typing import Optional, Callable, List
+from typing import Optional, Callable, List, Type
 from pathlib import Path
 
 try:
-    from watchdog.observers import Observer
     from watchdog.events import FileSystemEventHandler, FileSystemEvent
     WATCHDOG_AVAILABLE = True
 except ImportError:
+    WATCHDOG_AVAILABLE = False
+
+
+def _get_observer_class(observer_type: str = "auto") -> Type:
+    """Get the appropriate Observer class based on config and platform.
+
+    On macOS, the default FSEventsObserver has known reliability issues including
+    thread safety problems, deadlocks, and "SystemError: Cannot start fsevents
+    stream" errors. This function defaults to KqueueObserver on macOS for stability.
+
+    See: https://github.com/gorakhargosh/watchdog/issues/765
+
+    Args:
+        observer_type: One of "auto", "kqueue", "fsevents", "polling"
+            - "auto": kqueue on macOS, platform default elsewhere (recommended)
+            - "kqueue": Force kqueue observer (macOS/BSD)
+            - "fsevents": Force FSEvents observer (macOS only, has known issues)
+            - "polling": Cross-platform polling fallback (slower but most compatible)
+
+    Returns:
+        Observer class to instantiate
+
+    Raises:
+        ValueError: If fsevents requested on non-macOS platform
+        ImportError: If requested observer type is not available
+    """
+    system = platform.system()
+
+    if observer_type == "kqueue":
+        from watchdog.observers.kqueue import KqueueObserver
+        return KqueueObserver
+    elif observer_type == "fsevents":
+        if system != "Darwin":
+            raise ValueError("fsevents observer is only available on macOS")
+        from watchdog.observers.fsevents import FSEventsObserver
+        return FSEventsObserver
+    elif observer_type == "polling":
+        from watchdog.observers.polling import PollingObserver
+        return PollingObserver
+    else:  # "auto"
+        # Use platform default (FSEvents on macOS, inotify on Linux, etc.)
+        from watchdog.observers import Observer
+        return Observer
+
+
+if not WATCHDOG_AVAILABLE:
     # Fallback classes for when watchdog is not available
     class Observer:
         """Fallback Observer class when watchdog library is not available."""
@@ -109,12 +155,15 @@ class FileWatcherService(BaseService):
 
         self.rebuild_callback = rebuild_callback
 
-        # Get debounce seconds from config
+        # Get config options
         config = self.settings.get_file_watcher_config()
         debounce_seconds = config.get('debounce_seconds', 6.0)
+        observer_type = config.get('observer_type', 'auto')
 
         try:
-            self.observer = Observer()
+            ObserverClass = _get_observer_class(observer_type)
+            self.observer = ObserverClass()
+            self.logger.info("Using %s observer (type=%s)", ObserverClass.__name__, observer_type)
             self.event_handler = DebounceEventHandler(
                 debounce_seconds=debounce_seconds,
                 rebuild_callback=self.rebuild_callback,
@@ -263,7 +312,10 @@ class FileWatcherService(BaseService):
 
         # Start new observer
         try:
-            self.observer = Observer()
+            config = self.settings.get_file_watcher_config()
+            observer_type = config.get('observer_type', 'auto')
+            ObserverClass = _get_observer_class(observer_type)
+            self.observer = ObserverClass()
             self.observer.schedule(
                 self.event_handler,
                 str(self.base_path),
@@ -272,7 +324,7 @@ class FileWatcherService(BaseService):
             self.observer.start()
             self.is_monitoring = True
 
-            self.logger.info("File watcher restarted successfully")
+            self.logger.info("File watcher restarted successfully with %s", ObserverClass.__name__)
             return True
 
         except Exception as e:
@@ -286,9 +338,15 @@ class FileWatcherService(BaseService):
         Returns:
             Dictionary containing status information
         """
-        # Get current debounce seconds from config
+        # Get current config
         config = self.settings.get_file_watcher_config()
         debounce_seconds = config.get('debounce_seconds', 6.0)
+        observer_type = config.get('observer_type', 'auto')
+
+        # Determine actual observer class name
+        observer_class_name = None
+        if self.observer:
+            observer_class_name = type(self.observer).__name__
 
         return {
             "available": WATCHDOG_AVAILABLE,
@@ -296,6 +354,8 @@ class FileWatcherService(BaseService):
             "monitoring": self.is_monitoring,
             "restart_attempts": self.restart_attempts,
             "debounce_seconds": debounce_seconds,
+            "observer_type": observer_type,
+            "observer_class": observer_class_name,
             "base_path": self.base_path if self.base_path else None,
             "observer_alive": self.observer.is_alive() if self.observer else False
         }

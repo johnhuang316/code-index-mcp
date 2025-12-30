@@ -34,7 +34,17 @@ class ShallowIndexManager:
         self._file_list: Optional[List[str]] = None
         self._lock = threading.RLock()
 
-    def set_project_path(self, project_path: str) -> bool:
+    def set_project_path(self, project_path: str, additional_excludes: Optional[List[str]] = None) -> bool:
+        """Configure project path for shallow indexing.
+
+        Args:
+            project_path: Path to the project directory to index
+            additional_excludes: Optional list of additional directory/file
+                patterns to exclude from indexing (e.g., ['vendor', 'custom_deps'])
+
+        Returns:
+            True if configuration succeeded, False otherwise
+        """
         with self._lock:
             try:
                 if not isinstance(project_path, str) or not project_path.strip():
@@ -46,12 +56,14 @@ class ShallowIndexManager:
                     return False
 
                 self.project_path = project_path
-                self.index_builder = JSONIndexBuilder(project_path)
+                self.index_builder = JSONIndexBuilder(project_path, additional_excludes)
 
                 project_hash = hashlib.md5(project_path.encode()).hexdigest()[:12]
                 self.temp_dir = os.path.join(tempfile.gettempdir(), SETTINGS_DIR, project_hash)
                 os.makedirs(self.temp_dir, exist_ok=True)
                 self.index_path = os.path.join(self.temp_dir, INDEX_FILE_SHALLOW)
+                if additional_excludes:
+                    logger.info("Shallow index additional excludes: %s", additional_excludes)
                 return True
             except Exception as e:  # noqa: BLE001 - centralized logging
                 logger.error(f"Failed to set project path (shallow): {e}")
