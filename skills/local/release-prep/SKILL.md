@@ -7,9 +7,9 @@ description: Prepare a release for this repository when the user says "release".
 
 ## Overview
 
-Follow the code-index-mcp release checklist with the correct version files, tests,
-tags, and GitHub release steps. Use the helper script for quick repo status and
-the reference checklist for exact commands and file locations.
+Follow the code-index-mcp release checklist and use the helper script for quick
+repo status. Keep this file focused on the high-level workflow; the checklist
+contains the exact commands.
 
 ## Workflow
 
@@ -21,8 +21,11 @@ the reference checklist for exact commands and file locations.
    `uv.lock`.
 5. Ensure the diff only touches the three version files.
 6. Commit with Conventional Commits (e.g., `chore(release): vX.Y.Z`).
-7. Tag, push branch + tag, and create the GitHub release.
-8. Follow up on CI/deploy jobs and required smoke tests.
+7. Draft release notes focused only on functional changes (exclude technical-only
+   modifications) and confirm the notes with the user before creating the GitHub
+   release.
+8. Tag, push branch + tag, and create the GitHub release.
+9. Follow up on CI/deploy jobs.
 
 ## Resources
 
