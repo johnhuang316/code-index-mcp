@@ -9,7 +9,7 @@ import logging
 import os
 import time
 from collections import defaultdict
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FutureTimeoutError
 from typing import Dict, Iterable, List, Optional, Tuple
 
 from .json_index_builder import JSONIndexBuilder
@@ -85,9 +85,15 @@ class SQLiteIndexBuilder(JSONIndexBuilder):
 
             def _iter_results():
                 for future in as_completed(future_to_file):
-                    result = future.result()
-                    if result:
-                        yield result
+                    file_path = future_to_file[future]
+                    try:
+                        result = future.result(timeout=30)
+                        if result:
+                            yield result
+                    except FutureTimeoutError:
+                        logger.warning("Timeout processing file: %s (skipped)", file_path)
+                    except Exception as exc:
+                        logger.warning("Error processing file %s: %s (skipped)", file_path, exc)
 
             results_iter = _iter_results()
         else:

@@ -19,6 +19,10 @@ from .models import SymbolInfo, FileInfo
 
 logger = logging.getLogger(__name__)
 
+# Configuration for resilience
+MAX_FILE_LINES = 50000  # skip files larger than this
+MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB max file size
+
 
 @dataclass
 class IndexMetadata:
@@ -84,8 +88,22 @@ class JSONIndexBuilder:
             Tuple of (symbols, file_info, language, is_specialized) or None on error
         """
         try:
+            # Skip very large files to prevent hangs
+            try:
+                file_size = os.path.getsize(file_path)
+                if file_size > MAX_FILE_SIZE:
+                    logger.warning("Skipping large file (%d bytes): %s", file_size, file_path)
+                    return None
+            except OSError:
+                pass
+
             with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
                 content = f.read()
+
+            # Skip files with too many lines
+            if content.count('\n') > MAX_FILE_LINES:
+                logger.warning("Skipping file with too many lines: %s", file_path)
+                return None
 
             ext = Path(file_path).suffix.lower()
             rel_path = os.path.relpath(file_path, self.project_path).replace('\\', '/')
