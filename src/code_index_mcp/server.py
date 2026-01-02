@@ -16,8 +16,8 @@ import sys
 import logging
 import threading
 
-# Concurrency control for parallel requests
-MAX_CONCURRENT_REQUESTS = 5
+# Concurrency control for parallel requests (conservative for stability)
+MAX_CONCURRENT_REQUESTS = 3
 _request_semaphore = threading.Semaphore(MAX_CONCURRENT_REQUESTS)
 from contextlib import asynccontextmanager
 from dataclasses import dataclass

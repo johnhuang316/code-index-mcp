@@ -19,10 +19,11 @@ from .models import SymbolInfo, FileInfo
 
 logger = logging.getLogger(__name__)
 
-# Configuration for resilience
-MAX_FILE_LINES = 50000  # use lightweight mode for files larger than this
-MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB - use lightweight mode
-LIGHTWEIGHT_MAX_LINES = 5000  # max lines to scan in lightweight mode
+# Configuration for resilience (conservative limits for stability)
+# Philosophy: Return minimal data reliably, let users drill down for details
+MAX_FILE_LINES = 10000  # use lightweight mode for files larger than this
+MAX_FILE_SIZE = 1 * 1024 * 1024  # 1MB - use lightweight mode
+LIGHTWEIGHT_MAX_LINES = 1000  # max lines to scan in lightweight mode
 
 
 @dataclass

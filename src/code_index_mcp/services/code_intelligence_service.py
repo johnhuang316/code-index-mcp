@@ -11,8 +11,9 @@ from typing import Dict, Any
 
 from .base_service import BaseService
 
-# Configuration for get_symbol_body
-MAX_SYMBOL_LINES = 500  # max lines to return for a single symbol
+# Configuration for get_symbol_body (conservative for stability)
+# Philosophy: Return minimal data reliably, use line numbers to drill down
+MAX_SYMBOL_LINES = 150  # max lines to return for a single symbol
 from ..tools.filesystem import FileSystemTool
 from ..indexing import get_index_manager
 
