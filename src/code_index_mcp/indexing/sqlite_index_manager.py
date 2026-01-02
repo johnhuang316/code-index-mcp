@@ -216,7 +216,7 @@ class SQLiteIndexManager:
 
                 symbol_rows = conn.execute(
                     """
-                    SELECT type, line, signature, docstring, called_by, short_name
+                    SELECT type, line, end_line, signature, docstring, called_by, short_name
                     FROM symbols
                     WHERE file_id = ?
                     ORDER BY line ASC
@@ -335,6 +335,7 @@ def _categorize_symbols(symbol_rows) -> Dict[str, List[Dict[str, Any]]]:
             "name": row["short_name"],
             "called_by": called_by,
             "line": row["line"],
+            "end_line": row["end_line"],
             "signature": row["signature"],
             "docstring": row["docstring"],
         }

@@ -197,10 +197,6 @@ class ShallowIndexManager:
             self._file_list = None
 
 
-# Global singleton
-_shallow_manager = ShallowIndexManager()
-
-
-def get_shallow_index_manager() -> ShallowIndexManager:
-    return _shallow_manager
+# Note: get_shallow_index_manager() is now provided by project_manager_cache
+# for per-project isolation. See indexing/__init__.py
 

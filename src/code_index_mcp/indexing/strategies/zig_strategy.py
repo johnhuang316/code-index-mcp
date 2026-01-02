@@ -63,6 +63,7 @@ class ZigParsingStrategy(ParsingStrategy):
                     type="function",
                     file=file_path,
                     line=line_number,
+                    end_line=node.end_point[0] + 1,
                     signature=self._safe_extract_text(content, node.start_byte, node.end_byte)
                 )
                 functions.append(func_name)
@@ -75,7 +76,8 @@ class ZigParsingStrategy(ParsingStrategy):
                 symbols[symbol_id] = SymbolInfo(
                     type=node.type.replace('_declaration', ''),
                     file=file_path,
-                    line=line_number
+                    line=line_number,
+                    end_line=node.end_point[0] + 1
                 )
                 classes.append(type_name)
 

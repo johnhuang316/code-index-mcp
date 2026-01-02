@@ -98,6 +98,7 @@ class KotlinParsingStrategy(ParsingStrategy):
                     type=symbol_kind,
                     file=context.file_path,
                     line=node.start_point[0] + 1,
+                    end_line=node.end_point[0] + 1,
                 )
                 context.symbol_lookup[name] = symbol_id
                 context.classes.append(name)
@@ -126,6 +127,7 @@ class KotlinParsingStrategy(ParsingStrategy):
                     type=symbol_kind,
                     file=context.file_path,
                     line=node.start_point[0] + 1,
+                    end_line=node.end_point[0] + 1,
                     signature=self._get_kotlin_function_signature(node, context),
                 )
                 context.symbol_lookup[full_name] = symbol_id

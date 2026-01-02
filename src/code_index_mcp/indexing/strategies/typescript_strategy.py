@@ -89,6 +89,7 @@ class TypeScriptParsingStrategy(ParsingStrategy):
                     type="function",
                     file=context.file_path,
                     line=node.start_point[0] + 1,
+                    end_line=node.end_point[0] + 1,
                     signature=signature
                 )
                 context.symbols[symbol_id] = symbol_info
@@ -110,7 +111,8 @@ class TypeScriptParsingStrategy(ParsingStrategy):
                 symbol_info = SymbolInfo(
                     type="class",
                     file=context.file_path,
-                    line=node.start_point[0] + 1
+                    line=node.start_point[0] + 1,
+                    end_line=node.end_point[0] + 1
                 )
                 context.symbols[symbol_id] = symbol_info
                 context.symbol_lookup[name] = symbol_id
@@ -130,7 +132,8 @@ class TypeScriptParsingStrategy(ParsingStrategy):
                 symbol_info = SymbolInfo(
                     type="interface",
                     file=context.file_path,
-                    line=node.start_point[0] + 1
+                    line=node.start_point[0] + 1,
+                    end_line=node.end_point[0] + 1
                 )
                 context.symbols[symbol_id] = symbol_info
                 context.symbol_lookup[name] = symbol_id
@@ -153,6 +156,7 @@ class TypeScriptParsingStrategy(ParsingStrategy):
                     type="method",
                     file=context.file_path,
                     line=node.start_point[0] + 1,
+                    end_line=node.end_point[0] + 1,
                     signature=signature
                 )
                 context.symbols[symbol_id] = symbol_info
@@ -200,6 +204,7 @@ class TypeScriptParsingStrategy(ParsingStrategy):
                     type="function",
                     file=context.file_path,
                     line=child.start_point[0] + 1,
+                    end_line=child.end_point[0] + 1,
                     signature=signature
                 )
                 context.symbols[symbol_id] = symbol_info
