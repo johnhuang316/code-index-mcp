@@ -14,6 +14,11 @@ import inspect
 import signal
 import sys
 import logging
+import threading
+
+# Concurrency control for parallel requests
+MAX_CONCURRENT_REQUESTS = 5
+_request_semaphore = threading.Semaphore(MAX_CONCURRENT_REQUESTS)
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import AsyncIterator, Dict, Any, List, Optional
@@ -60,6 +65,15 @@ from .services.index_management_service import IndexManagementService
 from .services.code_intelligence_service import CodeIntelligenceService
 from .services.system_management_service import SystemManagementService
 from .utils import handle_mcp_tool_errors
+
+def with_concurrency_limit(func):
+    """Decorator to limit concurrent tool executions."""
+    def wrapper(*args, **kwargs):
+        with _request_semaphore:
+            return func(*args, **kwargs)
+    wrapper.__name__ = func.__name__
+    wrapper.__doc__ = func.__doc__
+    return wrapper
 
 # Setup logging without writing to files
 def setup_indexing_performance_logging():
@@ -171,6 +185,7 @@ def set_project_path(path: str, ctx: Context) -> str:
 
 @mcp.tool()
 @handle_mcp_tool_errors(return_type='dict')
+@with_concurrency_limit
 def search_code_advanced(
     pattern: str,
     ctx: Context,
@@ -208,6 +223,7 @@ Supports path patterns (*.py, test_*.js) and filename-only matching (README.md).
 
 @mcp.tool()
 @handle_mcp_tool_errors(return_type='dict')
+@with_concurrency_limit
 def get_file_summary(file_path: str, ctx: Context) -> Dict[str, Any]:
     """
     Get a summary of a specific file, including:
@@ -220,6 +236,7 @@ def get_file_summary(file_path: str, ctx: Context) -> Dict[str, Any]:
 
 @mcp.tool()
 @handle_mcp_tool_errors(return_type='dict')
+@with_concurrency_limit
 def get_symbol_body(file_path: str, symbol_name: str, ctx: Context) -> Dict[str, Any]:
     """
     Get the source code body of a specific symbol (function, method, or class).
@@ -255,6 +272,7 @@ Manually rebuild the project file index. Use after git operations or when index 
 
 @mcp.tool()
 @handle_mcp_tool_errors(return_type='str')
+@with_concurrency_limit
 def build_deep_index(ctx: Context) -> str:
     """
     Build the deep index (full symbol extraction) for the current project.

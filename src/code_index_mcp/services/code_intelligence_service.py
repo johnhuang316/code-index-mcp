@@ -10,6 +10,9 @@ import os
 from typing import Dict, Any
 
 from .base_service import BaseService
+
+# Configuration for get_symbol_body
+MAX_SYMBOL_LINES = 500  # max lines to return for a single symbol
 from ..tools.filesystem import FileSystemTool
 from ..indexing import get_index_manager
 
@@ -200,10 +203,19 @@ class CodeIntelligenceService(BaseService):
                 end_idx = min(start_idx + 50, len(lines))  # Read up to 50 lines
 
             code_lines = lines[start_idx:end_idx]
+            truncated = False
+            if len(code_lines) > MAX_SYMBOL_LINES:
+                code_lines = code_lines[:MAX_SYMBOL_LINES]
+                truncated = True
+
             code = "".join(code_lines)
+            if truncated:
+                remaining = (end_idx - start_idx) - MAX_SYMBOL_LINES
+                code += f"\n# ... truncated ({remaining} more lines, use line numbers to read specific sections)"
 
             return {
                 "status": "success",
+                "truncated": truncated,
                 "symbol_name": symbol_name,
                 "type": symbol_type,
                 "file_path": file_path,
