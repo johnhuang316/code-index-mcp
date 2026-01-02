@@ -14,7 +14,7 @@ import threading
 from contextlib import contextmanager
 from typing import Any, Dict, Generator, Optional
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 class SQLiteSchemaMismatchError(RuntimeError):
@@ -124,6 +124,7 @@ class SQLiteIndexStore:
                 file_id INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
                 type TEXT,
                 line INTEGER,
+                end_line INTEGER,
                 signature TEXT,
                 docstring TEXT,
                 called_by TEXT,

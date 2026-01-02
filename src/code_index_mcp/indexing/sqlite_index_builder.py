@@ -130,11 +130,12 @@ class SQLiteIndexBuilder(JSONIndexBuilder):
                             file_id,
                             type,
                             line,
+                            end_line,
                             signature,
                             docstring,
                             called_by,
                             short_name
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                         symbol_rows,
                     )
@@ -148,7 +149,7 @@ class SQLiteIndexBuilder(JSONIndexBuilder):
                 else:
                     fallback_count += 1
 
-                for _, _, symbol_type, _, _, _, _, _ in symbol_rows:
+                for _, _, symbol_type, _, _, _, _, _, _ in symbol_rows:
                     key = symbol_type or "unknown"
                     symbol_types[key] = symbol_types.get(key, 0) + 1
 
@@ -224,8 +225,8 @@ class SQLiteIndexBuilder(JSONIndexBuilder):
         self,
         symbols: Dict[str, SymbolInfo],
         file_id: int,
-    ) -> List[Tuple[str, int, Optional[str], Optional[int], Optional[str], Optional[str], str, str]]:
-        rows: List[Tuple[str, int, Optional[str], Optional[int], Optional[str], Optional[str], str, str]] = []
+    ) -> List[Tuple[str, int, Optional[str], Optional[int], Optional[int], Optional[str], Optional[str], str, str]]:
+        rows: List[Tuple[str, int, Optional[str], Optional[int], Optional[int], Optional[str], Optional[str], str, str]] = []
         for symbol_id, symbol_info in symbols.items():
             called_by = json.dumps(symbol_info.called_by or [])
             short_name = symbol_id.split("::")[-1]
@@ -235,6 +236,7 @@ class SQLiteIndexBuilder(JSONIndexBuilder):
                     file_id,
                     symbol_info.type,
                     symbol_info.line,
+                    symbol_info.end_line,
                     symbol_info.signature,
                     symbol_info.docstring,
                     called_by,
