@@ -11,28 +11,28 @@ to domain-specific services for business logic.
 # Standard library imports
 import argparse
 import inspect
-import sys
 import logging
+import sys
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import AsyncIterator, Dict, Any, List, Optional
+from typing import Any
 from urllib.parse import unquote
 
 # Third-party imports
-from mcp.server.fastmcp import FastMCP, Context
+from mcp.server.fastmcp import Context, FastMCP
 
 # Local imports
 from .project_settings import ProjectSettings
-from .services import (
-    SearchService, FileService, SettingsService, FileWatcherService
-)
-from .services.settings_service import manage_temp_directory
-from .services.file_discovery_service import FileDiscoveryService
-from .services.project_management_service import ProjectManagementService
-from .services.index_management_service import IndexManagementService
+from .services import FileService, FileWatcherService, SearchService, SettingsService
 from .services.code_intelligence_service import CodeIntelligenceService
+from .services.file_discovery_service import FileDiscoveryService
+from .services.index_management_service import IndexManagementService
+from .services.project_management_service import ProjectManagementService
+from .services.settings_service import manage_temp_directory
 from .services.system_management_service import SystemManagementService
 from .utils import handle_mcp_tool_errors
+
 
 # Setup logging without writing to files
 def setup_indexing_performance_logging():
@@ -41,7 +41,9 @@ def setup_indexing_performance_logging():
     root_logger = logging.getLogger()
     root_logger.handlers.clear()
 
-    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    formatter = logging.Formatter(
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    )
 
     # stderr for errors only
     stderr_handler = logging.StreamHandler(sys.stderr)
@@ -51,13 +53,16 @@ def setup_indexing_performance_logging():
     root_logger.addHandler(stderr_handler)
     root_logger.setLevel(logging.DEBUG)
 
+
 # Initialize logging (no file handlers)
 setup_indexing_performance_logging()
 logger = logging.getLogger(__name__)
 
+
 @dataclass
 class CodeIndexerContext:
     """Context for the Code Indexer MCP server."""
+
     base_path: str
     settings: ProjectSettings
     file_count: int = 0
@@ -67,6 +72,7 @@ class CodeIndexerContext:
 @dataclass
 class _CLIConfig:
     """Holds CLI configuration for bootstrap operations."""
+
     project_path: str | None = None
 
 
@@ -81,6 +87,7 @@ class _BootstrapRequestContext:
 
 _CLI_CONFIG = _CLIConfig()
 
+
 @asynccontextmanager
 async def indexer_lifespan(_server: FastMCP) -> AsyncIterator[CodeIndexerContext]:
     """Manage the lifecycle of the Code Indexer MCP server."""
@@ -92,17 +99,14 @@ async def indexer_lifespan(_server: FastMCP) -> AsyncIterator[CodeIndexerContext
 
     # Initialize context - file watcher will be initialized later when project path is set
     context = CodeIndexerContext(
-        base_path=base_path,
-        settings=settings,
-        file_watcher_service=None
+        base_path=base_path, settings=settings, file_watcher_service=None
     )
 
     try:
         # Bootstrap project path when provided via CLI.
         if _CLI_CONFIG.project_path:
             bootstrap_ctx = Context(
-                request_context=_BootstrapRequestContext(context),
-                fastmcp=mcp
+                request_context=_BootstrapRequestContext(context), fastmcp=mcp
             )
             try:
                 message = ProjectManagementService(bootstrap_ctx).initialize_project(
@@ -122,10 +126,12 @@ async def indexer_lifespan(_server: FastMCP) -> AsyncIterator[CodeIndexerContext
         if context.file_watcher_service:
             context.file_watcher_service.stop_monitoring()
 
+
 # Create the MCP server with lifespan manager
 mcp = FastMCP("CodeIndexer", lifespan=indexer_lifespan, dependencies=["pathlib"])
 
 # ----- RESOURCES -----
+
 
 @mcp.resource("files://{file_path}")
 def get_file_content(file_path: str) -> str:
@@ -134,16 +140,19 @@ def get_file_content(file_path: str) -> str:
     ctx = mcp.get_context()
     return FileService(ctx).get_file_content(decoded_path)
 
+
 # ----- TOOLS -----
 
+
 @mcp.tool()
-@handle_mcp_tool_errors(return_type='str')
+@handle_mcp_tool_errors(return_type="str")
 def set_project_path(path: str, ctx: Context) -> str:
     """Set the base project path for indexing."""
     return ProjectManagementService(ctx).initialize_project(path)
 
+
 @mcp.tool()
-@handle_mcp_tool_errors(return_type='dict')
+@handle_mcp_tool_errors(return_type="dict")
 def search_code_advanced(
     pattern: str,
     ctx: Context,
@@ -153,8 +162,8 @@ def search_code_advanced(
     fuzzy: bool = False,
     regex: bool = None,
     start_index: int = 0,
-        max_results: Optional[int] = 10
-) -> Dict[str, Any]:
+    max_results: int | None = 10,
+) -> dict[str, Any]:
     """
     Search for a code pattern in the project using an advanced, fast tool with pagination support.
 
@@ -203,12 +212,13 @@ def search_code_advanced(
         fuzzy=fuzzy,
         regex=regex,
         start_index=start_index,
-        max_results=max_results
+        max_results=max_results,
     )
 
+
 @mcp.tool()
-@handle_mcp_tool_errors(return_type='list')
-def find_files(pattern: str, ctx: Context) -> List[str]:
+@handle_mcp_tool_errors(return_type="list")
+def find_files(pattern: str, ctx: Context) -> list[str]:
     """
     Find files matching a glob pattern using pre-built file index.
 
@@ -232,9 +242,10 @@ def find_files(pattern: str, ctx: Context) -> List[str]:
     """
     return FileDiscoveryService(ctx).find_files(pattern)
 
+
 @mcp.tool()
-@handle_mcp_tool_errors(return_type='dict')
-def get_file_summary(file_path: str, ctx: Context) -> Dict[str, Any]:
+@handle_mcp_tool_errors(return_type="dict")
+def get_file_summary(file_path: str, ctx: Context) -> dict[str, Any]:
     """
     Get a summary of a specific file, including:
     - Line count
@@ -244,8 +255,9 @@ def get_file_summary(file_path: str, ctx: Context) -> Dict[str, Any]:
     """
     return CodeIntelligenceService(ctx).analyze_file(file_path)
 
+
 @mcp.tool()
-@handle_mcp_tool_errors(return_type='str')
+@handle_mcp_tool_errors(return_type="str")
 def refresh_index(ctx: Context) -> str:
     """
     Manually refresh the project index when files have been added/removed/moved.
@@ -269,8 +281,9 @@ def refresh_index(ctx: Context) -> str:
     """
     return IndexManagementService(ctx).rebuild_index()
 
+
 @mcp.tool()
-@handle_mcp_tool_errors(return_type='str')
+@handle_mcp_tool_errors(return_type="str")
 def build_deep_index(ctx: Context) -> str:
     """
     Build the deep index (full symbol extraction) for the current project.
@@ -279,32 +292,37 @@ def build_deep_index(ctx: Context) -> str:
     """
     return IndexManagementService(ctx).rebuild_deep_index()
 
+
 @mcp.tool()
-@handle_mcp_tool_errors(return_type='dict')
-def get_settings_info(ctx: Context) -> Dict[str, Any]:
+@handle_mcp_tool_errors(return_type="dict")
+def get_settings_info(ctx: Context) -> dict[str, Any]:
     """Get information about the project settings."""
     return SettingsService(ctx).get_settings_info()
 
+
 @mcp.tool()
-@handle_mcp_tool_errors(return_type='dict')
-def create_temp_directory() -> Dict[str, Any]:
+@handle_mcp_tool_errors(return_type="dict")
+def create_temp_directory() -> dict[str, Any]:
     """Create the temporary directory used for storing index data."""
-    return manage_temp_directory('create')
+    return manage_temp_directory("create")
+
 
 @mcp.tool()
-@handle_mcp_tool_errors(return_type='dict')
-def check_temp_directory() -> Dict[str, Any]:
+@handle_mcp_tool_errors(return_type="dict")
+def check_temp_directory() -> dict[str, Any]:
     """Check the temporary directory used for storing index data."""
-    return manage_temp_directory('check')
+    return manage_temp_directory("check")
+
 
 @mcp.tool()
-@handle_mcp_tool_errors(return_type='str')
+@handle_mcp_tool_errors(return_type="str")
 def clear_settings(ctx: Context) -> str:
     """Clear all settings and cached data."""
     return SettingsService(ctx).clear_all_settings()
 
+
 @mcp.tool()
-@handle_mcp_tool_errors(return_type='str')
+@handle_mcp_tool_errors(return_type="str")
 def refresh_search_tools(ctx: Context) -> str:
     """
     Manually re-detect the available command-line search tools on the system.
@@ -312,20 +330,22 @@ def refresh_search_tools(ctx: Context) -> str:
     """
     return SearchService(ctx).refresh_search_tools()
 
+
 @mcp.tool()
-@handle_mcp_tool_errors(return_type='dict')
-def get_file_watcher_status(ctx: Context) -> Dict[str, Any]:
+@handle_mcp_tool_errors(return_type="dict")
+def get_file_watcher_status(ctx: Context) -> dict[str, Any]:
     """Get file watcher service status and statistics."""
     return SystemManagementService(ctx).get_file_watcher_status()
 
+
 @mcp.tool()
-@handle_mcp_tool_errors(return_type='str')
+@handle_mcp_tool_errors(return_type="str")
 def configure_file_watcher(
     ctx: Context,
     enabled: bool = None,
     debounce_seconds: float = None,
     additional_exclude_patterns: list = None,
-    observer_type: str = None
+    observer_type: str = None,
 ) -> str:
     """Configure file watcher service settings.
 
@@ -339,10 +359,14 @@ def configure_file_watcher(
             - "fsevents": Force FSEvents observer (macOS only, has known reliability issues)
             - "polling": Cross-platform polling fallback (slower but most compatible)
     """
-    return SystemManagementService(ctx).configure_file_watcher(enabled, debounce_seconds, additional_exclude_patterns, observer_type)
+    return SystemManagementService(ctx).configure_file_watcher(
+        enabled, debounce_seconds, additional_exclude_patterns, observer_type
+    )
+
 
 # ----- PROMPTS -----
 # Removed: analyze_code, code_search, set_project prompts
+
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """Parse CLI arguments for the MCP server."""
@@ -350,19 +374,25 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--project-path",
         dest="project_path",
-        help="Set the project path on startup (equivalent to calling set_project_path)."
+        help="Set the project path on startup (equivalent to calling set_project_path).",
     )
     parser.add_argument(
         "--transport",
         choices=["stdio", "sse", "streamable-http"],
         default="stdio",
-        help="Transport protocol to use (default: stdio)."
+        help="Transport protocol to use (default: stdio).",
     )
     parser.add_argument(
         "--mount-path",
         dest="mount_path",
         default=None,
-        help="Mount path when using SSE transport."
+        help="Mount path when using SSE transport.",
+    )
+    parser.add_argument(
+        "--indexer-path",
+        dest="indexer_path",
+        default=None,
+        help="Custom path for storing indices (overrides default /tmp/code_indexer location).",
     )
     return parser.parse_args(argv)
 
@@ -373,6 +403,22 @@ def main(argv: list[str] | None = None):
 
     # Store CLI configuration for lifespan bootstrap.
     _CLI_CONFIG.project_path = args.project_path
+
+    # Configure custom index root if provided
+    if args.indexer_path:
+        # Patch ProjectSettings class to use the custom root
+        ProjectSettings.custom_index_root = args.indexer_path
+
+        # Ensure the directory exists
+        import os
+
+        try:
+            os.makedirs(args.indexer_path, exist_ok=True)
+        except Exception as e:
+            logger.error(
+                f"Failed to create custom indexer path {args.indexer_path}: {e}"
+            )
+            sys.exit(1)
 
     run_kwargs = {"transport": args.transport}
     if args.transport == "sse" and args.mount_path:
@@ -394,5 +440,6 @@ def main(argv: list[str] | None = None):
         logger.error("Unexpected MCP server error: %s", exc)
         raise
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()
