@@ -87,6 +87,43 @@ class TestServerConfig(unittest.TestCase):
         finally:
             shutil.rmtree(custom_root)
 
+    @patch("code_index_mcp.server.mcp")
+    def test_tool_prefix(self, mock_mcp):
+        """Test that --tool-prefix renames tools."""
+
+        # Setup mock tools
+        mock_tools = {
+            "test_tool": MagicMock(name="test_tool"),
+            "other_tool": MagicMock(name="other_tool"),
+        }
+        # Configure names
+        mock_tools["test_tool"].name = "test_tool"
+        mock_tools["other_tool"].name = "other_tool"
+
+        # Structure the mock to have _tool_manager._tools
+        mock_mcp._tool_manager._tools = mock_tools
+        mock_mcp._tools = None  # ensure it uses manager
+
+        test_args = ["--tool-prefix", "myctx:"]
+
+        with patch("code_index_mcp.server.mcp.run", MagicMock()):
+            # Run main logic
+            main(test_args)
+
+            # Check tool renaming in the MOCK object
+            # Note: The code modifies existing tools in place AND creates new registry
+            # We want to check if the registry was updated
+
+            new_registry = mock_mcp._tool_manager._tools
+
+            # Check keys
+            self.assertIn("myctx:test_tool", new_registry)
+            self.assertIn("myctx:other_tool", new_registry)
+            self.assertNotIn("test_tool", new_registry)  # old keys gone
+
+            # Check names
+            self.assertEqual(new_registry["myctx:test_tool"].name, "myctx:test_tool")
+
 
 if __name__ == "__main__":
     unittest.main()

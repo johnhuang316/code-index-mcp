@@ -394,6 +394,12 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         help="Custom path for storing indices (overrides default /tmp/code_indexer location).",
     )
+    parser.add_argument(
+        "--tool-prefix",
+        dest="tool_prefix",
+        default=None,
+        help="Prefix to add to all tool names (e.g., 'prefix:' -> 'prefix:tool_name').",
+    )
     return parser.parse_args(argv)
 
 
@@ -418,6 +424,46 @@ def main(argv: list[str] | None = None):
             logger.error(
                 f"Failed to create custom indexer path {args.indexer_path}: {e}"
             )
+            sys.exit(1)
+
+    # Rename tools if prefix is provided
+    if args.tool_prefix:
+        prefix = args.tool_prefix
+        try:
+            # Access internal tool registry (FastMCP specific)
+            # FastMCP stores tools in _tool_manager._tools or directly in _tools
+            # We need to support both for resilience
+            tool_registry = None
+            if hasattr(mcp, "_tool_manager") and hasattr(mcp._tool_manager, "_tools"):
+                tool_registry = mcp._tool_manager._tools
+            elif hasattr(mcp, "_tools"):
+                tool_registry = mcp._tools
+
+            if tool_registry:
+                # Create a new registry with prefixed names
+                new_registry = {}
+                for name, tool in tool_registry.items():
+                    new_name = f"{prefix}{name}"
+                    tool.name = new_name
+                    new_registry[new_name] = tool
+
+                # Replace the registry
+                if hasattr(mcp, "_tool_manager") and hasattr(
+                    mcp._tool_manager, "_tools"
+                ):
+                    mcp._tool_manager._tools = new_registry
+                elif hasattr(mcp, "_tools"):
+                    mcp._tools = new_registry
+
+                logger.info(
+                    f"Applied tool prefix '{prefix}' to {len(new_registry)} tools"
+                )
+            else:
+                logger.warning("Could not find tool registry to apply prefix")
+
+        except Exception as e:
+            logger.error(f"Failed to apply tool prefix: {e}")
+            # Non-fatal, continue with original names
             sys.exit(1)
 
     run_kwargs = {"transport": args.transport}
