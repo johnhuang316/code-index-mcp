@@ -18,6 +18,11 @@ class TestServerConfig(unittest.TestCase):
         if hasattr(ProjectSettings, "custom_index_root"):
             ProjectSettings.custom_index_root = None
 
+    def tearDown(self):
+        # Clean up ProjectSettings custom root after each test
+        if hasattr(ProjectSettings, "custom_index_root"):
+            ProjectSettings.custom_index_root = None
+
     def test_custom_indexer_path(self):
         """Test that --indexer-path sets the custom index root."""
         custom_root = tempfile.mkdtemp()
@@ -39,7 +44,9 @@ class TestServerConfig(unittest.TestCase):
             # Verify no 'code_indexer' subdir was created inside
             # Expected path: custom_root/hash
             # NOT: custom_root/code_indexer/hash
-            base_name = os.path.basename(settings.settings_path)
+            # Verify no 'code_indexer' subdir was created inside
+            # Expected path: custom_root/hash
+            # NOT: custom_root/code_indexer/hash
             self.assertEqual(os.path.dirname(settings.settings_path), custom_root)
 
         finally:

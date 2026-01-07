@@ -38,10 +38,7 @@ def manage_temp_directory(action: str) -> dict[str, Any]:
     # Try to get the actual temp directory from index manager, fallback to default
     try:
         # Check ProjectSettings first
-        if (
-            hasattr(ProjectSettings, "custom_index_root")
-            and ProjectSettings.custom_index_root
-        ):
+        if ProjectSettings.custom_index_root:
             temp_dir = ProjectSettings.custom_index_root
         else:
             index_manager = get_index_manager()
@@ -50,7 +47,7 @@ def manage_temp_directory(action: str) -> dict[str, Any]:
                 if index_manager.temp_dir
                 else os.path.join(tempfile.gettempdir(), SETTINGS_DIR)
             )
-    except:
+    except Exception:
         temp_dir = os.path.join(tempfile.gettempdir(), SETTINGS_DIR)
 
     if action == "create":
@@ -135,10 +132,7 @@ class SettingsService(BaseService):
         index_manager = get_index_manager()
 
         # Check ProjectSettings first for custom root
-        if (
-            hasattr(ProjectSettings, "custom_index_root")
-            and ProjectSettings.custom_index_root
-        ):
+        if ProjectSettings.custom_index_root:
             actual_temp_dir = ProjectSettings.custom_index_root
         else:
             actual_temp_dir = (

@@ -12,6 +12,7 @@ to domain-specific services for business logic.
 import argparse
 import inspect
 import logging
+import os
 import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -416,8 +417,6 @@ def main(argv: list[str] | None = None):
         ProjectSettings.custom_index_root = args.indexer_path
 
         # Ensure the directory exists
-        import os
-
         try:
             os.makedirs(args.indexer_path, exist_ok=True)
         except Exception as e:
@@ -463,7 +462,7 @@ def main(argv: list[str] | None = None):
 
         except Exception as e:
             logger.error(f"Failed to apply tool prefix: {e}")
-            # Non-fatal, continue with original names
+            # Fatal error: cannot apply requested prefix
             sys.exit(1)
 
     run_kwargs = {"transport": args.transport}
