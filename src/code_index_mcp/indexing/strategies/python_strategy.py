@@ -88,6 +88,7 @@ class SinglePassVisitor(ast.NodeVisitor):
             type="class",
             file=self.file_path,
             line=node.lineno,
+            end_line=getattr(node, 'end_lineno', None),
             docstring=docstring
         )
         
@@ -148,6 +149,7 @@ class SinglePassVisitor(ast.NodeVisitor):
             type="function",
             file=self.file_path,
             line=node.lineno,
+            end_line=getattr(node, 'end_lineno', None),
             signature=signature,
             docstring=docstring
         )
@@ -210,6 +212,7 @@ class SinglePassVisitor(ast.NodeVisitor):
             type="method",
             file=self.file_path,
             line=node.lineno,
+            end_line=getattr(node, 'end_lineno', None),
             signature=method_signature,
             docstring=method_docstring
         )

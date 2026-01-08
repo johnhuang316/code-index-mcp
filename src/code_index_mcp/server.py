@@ -11,12 +11,115 @@ to domain-specific services for business logic.
 # Standard library imports
 import argparse
 import inspect
+import signal
 import sys
 import logging
+import threading
+import time
+from functools import wraps
+
+# Concurrency control with FIFO queue for fair request ordering
+MAX_CONCURRENT_REQUESTS = 3
+
+
+class FIFOConcurrencyLimiter:
+    """
+    FIFO queue-based concurrency limiter with timeout.
+
+    Ensures requests are processed in arrival order while limiting
+    concurrent executions. Uses a ticket-based system for fairness.
+    """
+
+    def __init__(self, max_concurrent: int, timeout: float = 60.0):
+        self._max_concurrent = max_concurrent
+        self._timeout = timeout
+        self._lock = threading.Lock()
+        self._condition = threading.Condition(self._lock)
+        self._active_count = 0
+        self._next_ticket = 0
+        self._serving_ticket = 0
+
+    def acquire(self, timeout: float = None) -> int:
+        """Acquire a slot in FIFO order. Returns ticket number.
+
+        Raises TimeoutError if slot cannot be acquired within timeout.
+        """
+        timeout = timeout or self._timeout
+
+        with self._condition:
+            my_ticket = self._next_ticket
+            self._next_ticket += 1
+
+            # Wait until it's our turn AND there's capacity
+            start = time.monotonic()
+
+            while self._serving_ticket != my_ticket or self._active_count >= self._max_concurrent:
+                remaining = timeout - (time.monotonic() - start)
+                if remaining <= 0:
+                    # Timeout: skip our ticket so others can proceed
+                    if self._serving_ticket == my_ticket:
+                        self._serving_ticket += 1
+                        self._condition.notify_all()
+                    raise TimeoutError(f"Queue timeout after {timeout}s (ticket {my_ticket})")
+
+                self._condition.wait(timeout=min(remaining, 1.0))
+
+            # It's our turn, take the slot
+            self._active_count += 1
+            self._serving_ticket += 1
+            self._condition.notify_all()
+            return my_ticket
+
+    def release(self):
+        """Release a slot."""
+        with self._condition:
+            self._active_count -= 1
+            self._condition.notify_all()
+
+    @property
+    def stats(self) -> dict:
+        """Get current queue statistics."""
+        with self._lock:
+            return {
+                "active": self._active_count,
+                "max_concurrent": self._max_concurrent,
+                "next_ticket": self._next_ticket,
+                "serving_ticket": self._serving_ticket,
+                "queued": self._next_ticket - self._serving_ticket
+            }
+
+
+_concurrency_limiter = FIFOConcurrencyLimiter(MAX_CONCURRENT_REQUESTS)
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import AsyncIterator, Dict, Any, List, Optional
 from urllib.parse import unquote
+
+# Multi-session stability: Handle SIGINT gracefully
+# Claude Code sends SIGINT to existing MCP processes when new sessions start
+# We ignore SIGINT to maintain stability for the original session
+def _setup_signal_handlers():
+    """Setup signal handlers for multi-session stability."""
+    def sigint_handler(signum, frame):
+        # Log but don't exit - let the MCP server continue serving
+        logging.getLogger(__name__).warning(
+            "Received SIGINT - ignoring for multi-session stability"
+        )
+
+    def sigterm_handler(signum, frame):
+        # SIGTERM is a polite termination request - we should honor it
+        logging.getLogger(__name__).info(
+            "Received SIGTERM - shutting down gracefully"
+        )
+        sys.exit(0)
+
+    # Windows doesn't have SIGINT the same way, but we handle it anyway
+    if hasattr(signal, 'SIGINT'):
+        signal.signal(signal.SIGINT, sigint_handler)
+    if hasattr(signal, 'SIGTERM'):
+        signal.signal(signal.SIGTERM, sigterm_handler)
+
+_setup_signal_handlers()
 
 # Third-party imports
 from mcp.server.fastmcp import FastMCP, Context
@@ -33,6 +136,26 @@ from .services.index_management_service import IndexManagementService
 from .services.code_intelligence_service import CodeIntelligenceService
 from .services.system_management_service import SystemManagementService
 from .utils import handle_mcp_tool_errors
+
+def with_concurrency_limit(func):
+    """Decorator to limit concurrent tool executions with FIFO ordering."""
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        try:
+            _concurrency_limiter.acquire()
+        except TimeoutError as e:
+            # Return error dict instead of crashing
+            logging.getLogger(__name__).warning("Queue timeout for %s: %s", func.__name__, e)
+            return {
+                "status": "error",
+                "error": "queue_timeout",
+                "message": f"Server busy, request queued too long. Please retry. ({e})"
+            }
+        try:
+            return func(*args, **kwargs)
+        finally:
+            _concurrency_limiter.release()
+    return wrapper
 
 # Setup logging without writing to files
 def setup_indexing_performance_logging():
@@ -144,6 +267,7 @@ def set_project_path(path: str, ctx: Context) -> str:
 
 @mcp.tool()
 @handle_mcp_tool_errors(return_type='dict')
+@with_concurrency_limit
 def search_code_advanced(
     pattern: str,
     ctx: Context,
@@ -156,45 +280,9 @@ def search_code_advanced(
         max_results: Optional[int] = 10
 ) -> Dict[str, Any]:
     """
-    Search for a code pattern in the project using an advanced, fast tool with pagination support.
-
-    This tool automatically selects the best available command-line search tool
-    (like ugrep, ripgrep, ag, or grep) for maximum performance.
-
-    Args:
-        pattern: The search pattern. Can be literal text or regex (see regex parameter).
-        case_sensitive: Whether the search should be case-sensitive.
-        context_lines: Number of lines to show before and after the match.
-        file_pattern: A glob pattern to filter files to search in
-                     (e.g., "*.py", "*.js", "test_*.py").
-                     All search tools now handle glob patterns consistently:
-                     - ugrep: Uses glob patterns (*.py, *.{js,ts})
-                     - ripgrep: Uses glob patterns (*.py, *.{js,ts})
-                     - ag (Silver Searcher): Automatically converts globs to regex patterns
-                     - grep: Basic glob pattern matching
-                     All common glob patterns like "*.py", "test_*.js", "src/*.ts" are supported.
-        fuzzy: If True, enables fuzzy/partial matching behavior varies by search tool:
-               - ugrep: Native fuzzy search with --fuzzy flag (true edit-distance fuzzy search)
-               - ripgrep, ag, grep, basic: Word boundary pattern matching (not true fuzzy search)
-               IMPORTANT: Only ugrep provides true fuzzy search. Other tools use word boundary
-               matching which allows partial matches at word boundaries.
-               For exact literal matches, set fuzzy=False (default and recommended).
-        regex: Controls regex pattern matching behavior:
-               - If True, enables regex pattern matching
-               - If False, forces literal string search
-               - If None (default), automatically detects regex patterns and enables regex for patterns like "ERROR|WARN"
-               The pattern will always be validated for safety to prevent ReDoS attacks.
-        start_index: Zero-based offset into the flattened match list. Use to fetch subsequent pages.
-        max_results: Maximum number of matches to return (default 10). Pass None to retrieve all matches.
-
-    Returns:
-        A dictionary containing:
-        - results: List of matches with file, line, and text keys.
-        - pagination: Metadata with total_matches, returned, start_index, end_index, has_more,
-                      and optionally max_results.
-        If an error occurs, an error message is returned instead.
-
-    """
+Search for code pattern with pagination. Auto-selects best search tool (ugrep/ripgrep/ag/grep).
+Supports glob file_pattern (e.g., "*.py"), regex patterns, and fuzzy matching (ugrep only).
+"""
     return SearchService(ctx).search_code(
         pattern=pattern,
         case_sensitive=case_sensitive,
@@ -210,30 +298,14 @@ def search_code_advanced(
 @handle_mcp_tool_errors(return_type='list')
 def find_files(pattern: str, ctx: Context) -> List[str]:
     """
-    Find files matching a glob pattern using pre-built file index.
-
-    Use when:
-    - Looking for files by pattern (e.g., "*.py", "test_*.js")
-    - Searching by filename only (e.g., "README.md" finds all README files)
-    - Checking if specific files exist in the project
-    - Getting file lists for further analysis
-
-    Pattern matching:
-    - Supports both full path and filename-only matching
-    - Uses standard glob patterns (*, ?, [])
-    - Fast lookup using in-memory file index
-    - Uses forward slashes consistently across all platforms
-
-    Args:
-        pattern: Glob pattern to match files (e.g., "*.py", "test_*.js", "README.md")
-
-    Returns:
-        List of file paths matching the pattern
-    """
+Find files matching glob pattern using in-memory index.
+Supports path patterns (*.py, test_*.js) and filename-only matching (README.md).
+"""
     return FileDiscoveryService(ctx).find_files(pattern)
 
 @mcp.tool()
 @handle_mcp_tool_errors(return_type='dict')
+@with_concurrency_limit
 def get_file_summary(file_path: str, ctx: Context) -> Dict[str, Any]:
     """
     Get a summary of a specific file, including:
@@ -245,32 +317,44 @@ def get_file_summary(file_path: str, ctx: Context) -> Dict[str, Any]:
     return CodeIntelligenceService(ctx).analyze_file(file_path)
 
 @mcp.tool()
+@handle_mcp_tool_errors(return_type='dict')
+@with_concurrency_limit
+def get_symbol_body(file_path: str, symbol_name: str, ctx: Context) -> Dict[str, Any]:
+    """
+    Get the source code body of a specific symbol (function, method, or class).
+
+    This tool retrieves only the code for the specified symbol, enabling efficient
+    context usage by avoiding loading entire files.
+
+    Args:
+        file_path: Path to the file containing the symbol
+        symbol_name: Name of the symbol to retrieve (e.g., "process_data", "MyClass.my_method")
+
+    Returns:
+        Dictionary containing:
+        - status: "success" or "error"
+        - symbol_name: Name of the symbol
+        - type: Type of symbol (function, method, class)
+        - line: Start line number
+        - end_line: End line number
+        - code: The actual source code
+        - signature: Function/method signature (if available)
+        - docstring: Documentation string (if available)
+        - called_by: List of symbols that call this symbol
+    """
+    return CodeIntelligenceService(ctx).get_symbol_body(file_path, symbol_name)
+
+@mcp.tool()
 @handle_mcp_tool_errors(return_type='str')
 def refresh_index(ctx: Context) -> str:
     """
-    Manually refresh the project index when files have been added/removed/moved.
-
-    Use when:
-    - File watcher is disabled or unavailable
-    - After large-scale operations (git checkout, merge, pull) that change many files
-    - When you want immediate index rebuild without waiting for file watcher debounce
-    - When find_files results seem incomplete or outdated
-    - For troubleshooting suspected index synchronization issues
-
-    Important notes for LLMs:
-    - Always available as backup when file watcher is not working
-    - Performs full project re-indexing for complete accuracy
-    - Use when you suspect the index is stale after file system changes
-    - **Call this after programmatic file modifications if file watcher seems unresponsive**
-    - Complements the automatic file watcher system
-
-    Returns:
-        Success message with total file count
-    """
+Manually rebuild the project file index. Use after git operations or when index seems stale.
+"""
     return IndexManagementService(ctx).rebuild_index()
 
 @mcp.tool()
 @handle_mcp_tool_errors(return_type='str')
+@with_concurrency_limit
 def build_deep_index(ctx: Context) -> str:
     """
     Build the deep index (full symbol extraction) for the current project.
@@ -327,18 +411,7 @@ def configure_file_watcher(
     additional_exclude_patterns: list = None,
     observer_type: str = None
 ) -> str:
-    """Configure file watcher service settings.
-
-    Args:
-        enabled: Whether to enable file watcher
-        debounce_seconds: Debounce time in seconds before triggering rebuild
-        additional_exclude_patterns: Additional directory/file patterns to exclude
-        observer_type: Observer backend to use. Options:
-            - "auto" (default): kqueue on macOS for reliability, platform default elsewhere
-            - "kqueue": Force kqueue observer (macOS/BSD)
-            - "fsevents": Force FSEvents observer (macOS only, has known reliability issues)
-            - "polling": Cross-platform polling fallback (slower but most compatible)
-    """
+    """Configure file watcher: enable/disable, debounce time, exclude patterns, observer type (auto/kqueue/fsevents/polling)."""
     return SystemManagementService(ctx).configure_file_watcher(enabled, debounce_seconds, additional_exclude_patterns, observer_type)
 
 # ----- PROMPTS -----
@@ -364,6 +437,12 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         help="Mount path when using SSE transport."
     )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=8000,
+        help="Port for SSE transport (default: 8000)."
+    )
     return parser.parse_args(argv)
 
 
@@ -374,25 +453,52 @@ def main(argv: list[str] | None = None):
     # Store CLI configuration for lifespan bootstrap.
     _CLI_CONFIG.project_path = args.project_path
 
-    run_kwargs = {"transport": args.transport}
-    if args.transport == "sse" and args.mount_path:
-        run_signature = inspect.signature(mcp.run)
-        if "mount_path" in run_signature.parameters:
-            run_kwargs["mount_path"] = args.mount_path
-        else:
-            logger.warning(
-                "Ignoring --mount-path because this FastMCP version "
-                "does not accept the parameter."
-            )
+    # For HTTP transports, add project context middleware for per-project isolation
+    if args.transport in ("sse", "streamable-http"):
+        import asyncio
+        import uvicorn
+        from .middleware import ProjectContextMiddleware
 
-    try:
-        mcp.run(**run_kwargs)
-    except RuntimeError as exc:
-        logger.error("MCP server terminated with error: %s", exc)
-        raise SystemExit(1) from exc
-    except Exception as exc:  # pylint: disable=broad-except
-        logger.error("Unexpected MCP server error: %s", exc)
-        raise
+        # Set port via settings
+        mcp.settings.port = args.port
+
+        # Get the appropriate Starlette app
+        if args.transport == "sse":
+            starlette_app = mcp.sse_app(args.mount_path)
+        else:
+            starlette_app = mcp.streamable_http_app()
+
+        # Add project context middleware for per-project manager isolation
+        starlette_app.add_middleware(ProjectContextMiddleware)
+        logger.info("Added ProjectContextMiddleware for per-project isolation")
+
+        # Run with uvicorn
+        config = uvicorn.Config(
+            starlette_app,
+            host=mcp.settings.host,
+            port=mcp.settings.port,
+            log_level="warning",
+        )
+        server = uvicorn.Server(config)
+
+        try:
+            asyncio.run(server.serve())
+        except RuntimeError as exc:
+            logger.error("MCP server terminated with error: %s", exc)
+            raise SystemExit(1) from exc
+        except Exception as exc:  # pylint: disable=broad-except
+            logger.error("Unexpected MCP server error: %s", exc)
+            raise
+    else:
+        # For stdio transport, use default run method
+        try:
+            mcp.run(transport=args.transport)
+        except RuntimeError as exc:
+            logger.error("MCP server terminated with error: %s", exc)
+            raise SystemExit(1) from exc
+        except Exception as exc:  # pylint: disable=broad-except
+            logger.error("Unexpected MCP server error: %s", exc)
+            raise
 
 if __name__ == '__main__':
     main()

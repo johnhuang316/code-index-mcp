@@ -40,6 +40,7 @@ class FallbackParsingStrategy(ParsingStrategy):
                 type="file",
                 file=file_path,
                 line=1,
+                end_line=len(content.splitlines()),
                 signature=f"{self.language_name} file: {filename}"
             )
 

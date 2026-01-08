@@ -97,6 +97,7 @@ class JavaScriptParsingStrategy(ParsingStrategy):
                     type="function",
                     file=file_path,
                     line=node.start_point[0] + 1,
+                    end_line=node.end_point[0] + 1,
                     signature=signature
                 )
                 symbol_lookup[name] = symbol_id
@@ -130,7 +131,8 @@ class JavaScriptParsingStrategy(ParsingStrategy):
                 symbols[symbol_id] = SymbolInfo(
                     type="class",
                     file=file_path,
-                    line=node.start_point[0] + 1
+                    line=node.start_point[0] + 1,
+                    end_line=node.end_point[0] + 1
                 )
                 symbol_lookup[name] = symbol_id
                 classes.append(name)
@@ -164,6 +166,7 @@ class JavaScriptParsingStrategy(ParsingStrategy):
                     type="method",
                     file=file_path,
                     line=node.start_point[0] + 1,
+                    end_line=node.end_point[0] + 1,
                     signature=signature
                 )
                 symbol_lookup[full_name] = symbol_id
@@ -226,6 +229,7 @@ class JavaScriptParsingStrategy(ParsingStrategy):
                         type="function",
                         file=file_path,
                         line=child.start_point[0] + 1,
+                        end_line=child.end_point[0] + 1,
                         signature=signature
                     )
                     symbol_lookup[name] = symbol_id

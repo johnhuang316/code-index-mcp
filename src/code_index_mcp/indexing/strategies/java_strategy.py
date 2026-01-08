@@ -86,7 +86,8 @@ class JavaParsingStrategy(ParsingStrategy):
                 symbol_info = SymbolInfo(
                     type="class",
                     file=context.file_path,
-                    line=node.start_point[0] + 1
+                    line=node.start_point[0] + 1,
+                    end_line=node.end_point[0] + 1
                 )
                 context.symbols[symbol_id] = symbol_info
                 context.symbol_lookup[name] = symbol_id
@@ -112,6 +113,7 @@ class JavaParsingStrategy(ParsingStrategy):
                     type="method",
                     file=context.file_path,
                     line=node.start_point[0] + 1,
+                    end_line=node.end_point[0] + 1,
                     signature=self._get_java_method_signature(node, context.content)
                 )
                 context.symbols[symbol_id] = symbol_info

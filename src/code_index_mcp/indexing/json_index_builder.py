@@ -19,6 +19,12 @@ from .models import SymbolInfo, FileInfo
 
 logger = logging.getLogger(__name__)
 
+# Configuration for resilience (conservative limits for stability)
+# Philosophy: Return minimal data reliably, let users drill down for details
+MAX_FILE_LINES = 10000  # use lightweight mode for files larger than this
+MAX_FILE_SIZE = 1 * 1024 * 1024  # 1MB - use lightweight mode
+LIGHTWEIGHT_MAX_LINES = 1000  # max lines to scan in lightweight mode
+
 
 @dataclass
 class IndexMetadata:
@@ -84,8 +90,36 @@ class JSONIndexBuilder:
             Tuple of (symbols, file_info, language, is_specialized) or None on error
         """
         try:
+            # Check file size for lightweight mode
+            use_lightweight = False
+            try:
+                file_size = os.path.getsize(file_path)
+                if file_size > MAX_FILE_SIZE:
+                    logger.info("Large file (%d bytes), using lightweight mode: %s", file_size, file_path)
+                    use_lightweight = True
+            except OSError:
+                pass
+
             with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-                content = f.read()
+                if use_lightweight:
+                    # Read only first N lines for lightweight mode
+                    lines = []
+                    for i, line in enumerate(f):
+                        if i >= LIGHTWEIGHT_MAX_LINES:
+                            break
+                        lines.append(line)
+                    content = ''.join(lines)
+                else:
+                    content = f.read()
+
+            # Check line count for lightweight mode
+            line_count = content.count('\n')
+            if not use_lightweight and line_count > MAX_FILE_LINES:
+                logger.info("File with many lines (%d), using lightweight mode: %s", line_count, file_path)
+                use_lightweight = True
+                # Truncate content to first N lines
+                lines = content.split('\n')[:LIGHTWEIGHT_MAX_LINES]
+                content = '\n'.join(lines)
 
             ext = Path(file_path).suffix.lower()
             rel_path = os.path.relpath(file_path, self.project_path).replace('\\', '/')

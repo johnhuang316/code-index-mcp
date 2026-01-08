@@ -186,6 +186,7 @@ class CSharpParsingStrategy(ParsingStrategy):
                     type=self._TYPE_KINDS[node_type],
                     file=context.file_path,
                     line=node.start_point[0] + 1,
+                    end_line=node.end_point[0] + 1,
                 )
                 context.symbol_lookup[full_type_name] = symbol_id
                 context.symbol_lookup[clean_name] = symbol_id
@@ -216,6 +217,7 @@ class CSharpParsingStrategy(ParsingStrategy):
                     type=symbol_kind,
                     file=context.file_path,
                     line=node.start_point[0] + 1,
+                    end_line=node.end_point[0] + 1,
                     signature=signature,
                 )
 
@@ -252,6 +254,7 @@ class CSharpParsingStrategy(ParsingStrategy):
                     type="constructor",
                     file=context.file_path,
                     line=node.start_point[0] + 1,
+                    end_line=node.end_point[0] + 1,
                     signature=signature,
                 )
                 context.symbol_lookup[ctor_full_name] = symbol_id
@@ -282,6 +285,7 @@ class CSharpParsingStrategy(ParsingStrategy):
                     type="function",
                     file=context.file_path,
                     line=node.start_point[0] + 1,
+                    end_line=node.end_point[0] + 1,
                     signature=signature,
                 )
                 context.symbol_lookup[full_name] = symbol_id

@@ -9,7 +9,7 @@ import logging
 import os
 import time
 from collections import defaultdict
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FutureTimeoutError
 from typing import Dict, Iterable, List, Optional, Tuple
 
 from .json_index_builder import JSONIndexBuilder
@@ -85,9 +85,15 @@ class SQLiteIndexBuilder(JSONIndexBuilder):
 
             def _iter_results():
                 for future in as_completed(future_to_file):
-                    result = future.result()
-                    if result:
-                        yield result
+                    file_path = future_to_file[future]
+                    try:
+                        result = future.result(timeout=30)
+                        if result:
+                            yield result
+                    except FutureTimeoutError:
+                        logger.warning("Timeout processing file: %s (skipped)", file_path)
+                    except Exception as exc:
+                        logger.warning("Error processing file %s: %s (skipped)", file_path, exc)
 
             results_iter = _iter_results()
         else:
@@ -130,11 +136,12 @@ class SQLiteIndexBuilder(JSONIndexBuilder):
                             file_id,
                             type,
                             line,
+                            end_line,
                             signature,
                             docstring,
                             called_by,
                             short_name
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                         symbol_rows,
                     )
@@ -148,7 +155,7 @@ class SQLiteIndexBuilder(JSONIndexBuilder):
                 else:
                     fallback_count += 1
 
-                for _, _, symbol_type, _, _, _, _, _ in symbol_rows:
+                for _, _, symbol_type, _, _, _, _, _, _ in symbol_rows:
                     key = symbol_type or "unknown"
                     symbol_types[key] = symbol_types.get(key, 0) + 1
 
@@ -224,8 +231,8 @@ class SQLiteIndexBuilder(JSONIndexBuilder):
         self,
         symbols: Dict[str, SymbolInfo],
         file_id: int,
-    ) -> List[Tuple[str, int, Optional[str], Optional[int], Optional[str], Optional[str], str, str]]:
-        rows: List[Tuple[str, int, Optional[str], Optional[int], Optional[str], Optional[str], str, str]] = []
+    ) -> List[Tuple[str, int, Optional[str], Optional[int], Optional[int], Optional[str], Optional[str], str, str]]:
+        rows: List[Tuple[str, int, Optional[str], Optional[int], Optional[int], Optional[str], Optional[str], str, str]] = []
         for symbol_id, symbol_info in symbols.items():
             called_by = json.dumps(symbol_info.called_by or [])
             short_name = symbol_id.split("::")[-1]
@@ -235,6 +242,7 @@ class SQLiteIndexBuilder(JSONIndexBuilder):
                     file_id,
                     symbol_info.type,
                     symbol_info.line,
+                    symbol_info.end_line,
                     symbol_info.signature,
                     symbol_info.docstring,
                     called_by,
