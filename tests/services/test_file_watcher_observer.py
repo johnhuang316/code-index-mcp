@@ -39,6 +39,8 @@ def test_auto_uses_default_on_windows():
 
 def test_explicit_kqueue():
     """Verify explicit kqueue selection works."""
+    if platform.system() == 'Windows':
+        pytest.skip("kqueue observer import fails on Windows")
     ObserverClass = _get_observer_class('kqueue')
     assert 'Kqueue' in ObserverClass.__name__
 
