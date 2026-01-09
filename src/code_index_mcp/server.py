@@ -11,12 +11,32 @@ to domain-specific services for business logic.
 # Standard library imports
 import argparse
 import inspect
+import logging
+import os
 import signal
 import sys
-import logging
 import threading
 import time
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from functools import wraps
+from typing import Any, Dict, List, Optional
+from urllib.parse import unquote
+
+# Third-party imports
+from mcp.server.fastmcp import Context, FastMCP
+
+# Local imports
+from .project_settings import ProjectSettings
+from .services import FileService, FileWatcherService, SearchService, SettingsService
+from .services.code_intelligence_service import CodeIntelligenceService
+from .services.file_discovery_service import FileDiscoveryService
+from .services.index_management_service import IndexManagementService
+from .services.project_management_service import ProjectManagementService
+from .services.settings_service import manage_temp_directory
+from .services.system_management_service import SystemManagementService
+from .utils import handle_mcp_tool_errors
 
 # Concurrency control with FIFO queue for fair request ordering
 MAX_CONCURRENT_REQUESTS = 3
@@ -90,10 +110,7 @@ class FIFOConcurrencyLimiter:
 
 
 _concurrency_limiter = FIFOConcurrencyLimiter(MAX_CONCURRENT_REQUESTS)
-from contextlib import asynccontextmanager
-from dataclasses import dataclass
-from typing import AsyncIterator, Dict, Any, List, Optional
-from urllib.parse import unquote
+
 
 # Multi-session stability: Handle SIGINT gracefully
 # Claude Code sends SIGINT to existing MCP processes when new sessions start
@@ -121,21 +138,6 @@ def _setup_signal_handlers():
 
 _setup_signal_handlers()
 
-# Third-party imports
-from mcp.server.fastmcp import FastMCP, Context
-
-# Local imports
-from .project_settings import ProjectSettings
-from .services import (
-    SearchService, FileService, SettingsService, FileWatcherService
-)
-from .services.settings_service import manage_temp_directory
-from .services.file_discovery_service import FileDiscoveryService
-from .services.project_management_service import ProjectManagementService
-from .services.index_management_service import IndexManagementService
-from .services.code_intelligence_service import CodeIntelligenceService
-from .services.system_management_service import SystemManagementService
-from .utils import handle_mcp_tool_errors
 
 def with_concurrency_limit(func):
     """Decorator to limit concurrent tool executions with FIFO ordering."""
@@ -157,6 +159,7 @@ def with_concurrency_limit(func):
             _concurrency_limiter.release()
     return wrapper
 
+
 # Setup logging without writing to files
 def setup_indexing_performance_logging():
     """Setup logging (stderr only); remove any file-based logging."""
@@ -164,7 +167,9 @@ def setup_indexing_performance_logging():
     root_logger = logging.getLogger()
     root_logger.handlers.clear()
 
-    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    formatter = logging.Formatter(
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    )
 
     # stderr for errors only
     stderr_handler = logging.StreamHandler(sys.stderr)
@@ -174,13 +179,16 @@ def setup_indexing_performance_logging():
     root_logger.addHandler(stderr_handler)
     root_logger.setLevel(logging.DEBUG)
 
+
 # Initialize logging (no file handlers)
 setup_indexing_performance_logging()
 logger = logging.getLogger(__name__)
 
+
 @dataclass
 class CodeIndexerContext:
     """Context for the Code Indexer MCP server."""
+
     base_path: str
     settings: ProjectSettings
     file_count: int = 0
@@ -190,6 +198,7 @@ class CodeIndexerContext:
 @dataclass
 class _CLIConfig:
     """Holds CLI configuration for bootstrap operations."""
+
     project_path: str | None = None
 
 
@@ -204,6 +213,7 @@ class _BootstrapRequestContext:
 
 _CLI_CONFIG = _CLIConfig()
 
+
 @asynccontextmanager
 async def indexer_lifespan(_server: FastMCP) -> AsyncIterator[CodeIndexerContext]:
     """Manage the lifecycle of the Code Indexer MCP server."""
@@ -215,17 +225,14 @@ async def indexer_lifespan(_server: FastMCP) -> AsyncIterator[CodeIndexerContext
 
     # Initialize context - file watcher will be initialized later when project path is set
     context = CodeIndexerContext(
-        base_path=base_path,
-        settings=settings,
-        file_watcher_service=None
+        base_path=base_path, settings=settings, file_watcher_service=None
     )
 
     try:
         # Bootstrap project path when provided via CLI.
         if _CLI_CONFIG.project_path:
             bootstrap_ctx = Context(
-                request_context=_BootstrapRequestContext(context),
-                fastmcp=mcp
+                request_context=_BootstrapRequestContext(context), fastmcp=mcp
             )
             try:
                 message = ProjectManagementService(bootstrap_ctx).initialize_project(
@@ -245,10 +252,12 @@ async def indexer_lifespan(_server: FastMCP) -> AsyncIterator[CodeIndexerContext
         if context.file_watcher_service:
             context.file_watcher_service.stop_monitoring()
 
+
 # Create the MCP server with lifespan manager
 mcp = FastMCP("CodeIndexer", lifespan=indexer_lifespan, dependencies=["pathlib"])
 
 # ----- RESOURCES -----
+
 
 @mcp.resource("files://{file_path}")
 def get_file_content(file_path: str) -> str:
@@ -257,16 +266,19 @@ def get_file_content(file_path: str) -> str:
     ctx = mcp.get_context()
     return FileService(ctx).get_file_content(decoded_path)
 
+
 # ----- TOOLS -----
 
+
 @mcp.tool()
-@handle_mcp_tool_errors(return_type='str')
+@handle_mcp_tool_errors(return_type="str")
 def set_project_path(path: str, ctx: Context) -> str:
     """Set the base project path for indexing."""
     return ProjectManagementService(ctx).initialize_project(path)
 
+
 @mcp.tool()
-@handle_mcp_tool_errors(return_type='dict')
+@handle_mcp_tool_errors(return_type="dict")
 @with_concurrency_limit
 def search_code_advanced(
     pattern: str,
@@ -277,8 +289,8 @@ def search_code_advanced(
     fuzzy: bool = False,
     regex: bool = None,
     start_index: int = 0,
-        max_results: Optional[int] = 10
-) -> Dict[str, Any]:
+    max_results: int | None = 10,
+) -> dict[str, Any]:
     """
 Search for code pattern with pagination. Auto-selects best search tool (ugrep/ripgrep/ag/grep).
 Supports glob file_pattern (e.g., "*.py"), regex patterns, and fuzzy matching (ugrep only).
@@ -291,22 +303,24 @@ Supports glob file_pattern (e.g., "*.py"), regex patterns, and fuzzy matching (u
         fuzzy=fuzzy,
         regex=regex,
         start_index=start_index,
-        max_results=max_results
+        max_results=max_results,
     )
 
+
 @mcp.tool()
-@handle_mcp_tool_errors(return_type='list')
-def find_files(pattern: str, ctx: Context) -> List[str]:
+@handle_mcp_tool_errors(return_type="list")
+def find_files(pattern: str, ctx: Context) -> list[str]:
     """
 Find files matching glob pattern using in-memory index.
 Supports path patterns (*.py, test_*.js) and filename-only matching (README.md).
 """
     return FileDiscoveryService(ctx).find_files(pattern)
 
+
 @mcp.tool()
-@handle_mcp_tool_errors(return_type='dict')
+@handle_mcp_tool_errors(return_type="dict")
 @with_concurrency_limit
-def get_file_summary(file_path: str, ctx: Context) -> Dict[str, Any]:
+def get_file_summary(file_path: str, ctx: Context) -> dict[str, Any]:
     """
     Get a summary of a specific file, including:
     - Line count
@@ -316,10 +330,11 @@ def get_file_summary(file_path: str, ctx: Context) -> Dict[str, Any]:
     """
     return CodeIntelligenceService(ctx).analyze_file(file_path)
 
+
 @mcp.tool()
-@handle_mcp_tool_errors(return_type='dict')
+@handle_mcp_tool_errors(return_type="dict")
 @with_concurrency_limit
-def get_symbol_body(file_path: str, symbol_name: str, ctx: Context) -> Dict[str, Any]:
+def get_symbol_body(file_path: str, symbol_name: str, ctx: Context) -> dict[str, Any]:
     """
     Get the source code body of a specific symbol (function, method, or class).
 
@@ -344,16 +359,18 @@ def get_symbol_body(file_path: str, symbol_name: str, ctx: Context) -> Dict[str,
     """
     return CodeIntelligenceService(ctx).get_symbol_body(file_path, symbol_name)
 
+
 @mcp.tool()
-@handle_mcp_tool_errors(return_type='str')
+@handle_mcp_tool_errors(return_type="str")
 def refresh_index(ctx: Context) -> str:
     """
 Manually rebuild the project file index. Use after git operations or when index seems stale.
 """
     return IndexManagementService(ctx).rebuild_index()
 
+
 @mcp.tool()
-@handle_mcp_tool_errors(return_type='str')
+@handle_mcp_tool_errors(return_type="str")
 @with_concurrency_limit
 def build_deep_index(ctx: Context) -> str:
     """
@@ -363,32 +380,37 @@ def build_deep_index(ctx: Context) -> str:
     """
     return IndexManagementService(ctx).rebuild_deep_index()
 
+
 @mcp.tool()
-@handle_mcp_tool_errors(return_type='dict')
-def get_settings_info(ctx: Context) -> Dict[str, Any]:
+@handle_mcp_tool_errors(return_type="dict")
+def get_settings_info(ctx: Context) -> dict[str, Any]:
     """Get information about the project settings."""
     return SettingsService(ctx).get_settings_info()
 
+
 @mcp.tool()
-@handle_mcp_tool_errors(return_type='dict')
-def create_temp_directory() -> Dict[str, Any]:
+@handle_mcp_tool_errors(return_type="dict")
+def create_temp_directory() -> dict[str, Any]:
     """Create the temporary directory used for storing index data."""
-    return manage_temp_directory('create')
+    return manage_temp_directory("create")
+
 
 @mcp.tool()
-@handle_mcp_tool_errors(return_type='dict')
-def check_temp_directory() -> Dict[str, Any]:
+@handle_mcp_tool_errors(return_type="dict")
+def check_temp_directory() -> dict[str, Any]:
     """Check the temporary directory used for storing index data."""
-    return manage_temp_directory('check')
+    return manage_temp_directory("check")
+
 
 @mcp.tool()
-@handle_mcp_tool_errors(return_type='str')
+@handle_mcp_tool_errors(return_type="str")
 def clear_settings(ctx: Context) -> str:
     """Clear all settings and cached data."""
     return SettingsService(ctx).clear_all_settings()
 
+
 @mcp.tool()
-@handle_mcp_tool_errors(return_type='str')
+@handle_mcp_tool_errors(return_type="str")
 def refresh_search_tools(ctx: Context) -> str:
     """
     Manually re-detect the available command-line search tools on the system.
@@ -396,26 +418,43 @@ def refresh_search_tools(ctx: Context) -> str:
     """
     return SearchService(ctx).refresh_search_tools()
 
+
 @mcp.tool()
-@handle_mcp_tool_errors(return_type='dict')
-def get_file_watcher_status(ctx: Context) -> Dict[str, Any]:
+@handle_mcp_tool_errors(return_type="dict")
+def get_file_watcher_status(ctx: Context) -> dict[str, Any]:
     """Get file watcher service status and statistics."""
     return SystemManagementService(ctx).get_file_watcher_status()
 
+
 @mcp.tool()
-@handle_mcp_tool_errors(return_type='str')
+@handle_mcp_tool_errors(return_type="str")
 def configure_file_watcher(
     ctx: Context,
     enabled: bool = None,
     debounce_seconds: float = None,
     additional_exclude_patterns: list = None,
-    observer_type: str = None
+    observer_type: str = None,
 ) -> str:
-    """Configure file watcher: enable/disable, debounce time, exclude patterns, observer type (auto/kqueue/fsevents/polling)."""
-    return SystemManagementService(ctx).configure_file_watcher(enabled, debounce_seconds, additional_exclude_patterns, observer_type)
+    """Configure file watcher service settings.
+
+    Args:
+        enabled: Whether to enable file watcher
+        debounce_seconds: Debounce time in seconds before triggering rebuild
+        additional_exclude_patterns: Additional directory/file patterns to exclude
+        observer_type: Observer backend to use. Options:
+            - "auto" (default): kqueue on macOS for reliability, platform default elsewhere
+            - "kqueue": Force kqueue observer (macOS/BSD)
+            - "fsevents": Force FSEvents observer (macOS only, has known reliability issues)
+            - "polling": Cross-platform polling fallback (slower but most compatible)
+    """
+    return SystemManagementService(ctx).configure_file_watcher(
+        enabled, debounce_seconds, additional_exclude_patterns, observer_type
+    )
+
 
 # ----- PROMPTS -----
 # Removed: analyze_code, code_search, set_project prompts
+
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """Parse CLI arguments for the MCP server."""
@@ -423,19 +462,31 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--project-path",
         dest="project_path",
-        help="Set the project path on startup (equivalent to calling set_project_path)."
+        help="Set the project path on startup (equivalent to calling set_project_path).",
     )
     parser.add_argument(
         "--transport",
         choices=["stdio", "sse", "streamable-http"],
         default="stdio",
-        help="Transport protocol to use (default: stdio)."
+        help="Transport protocol to use (default: stdio).",
     )
     parser.add_argument(
         "--mount-path",
         dest="mount_path",
         default=None,
-        help="Mount path when using SSE transport."
+        help="Mount path when using SSE transport.",
+    )
+    parser.add_argument(
+        "--indexer-path",
+        dest="indexer_path",
+        default=None,
+        help="Custom path for storing indices (overrides default /tmp/code_indexer location).",
+    )
+    parser.add_argument(
+        "--tool-prefix",
+        dest="tool_prefix",
+        default=None,
+        help="Prefix to add to all tool names (e.g., 'prefix:' -> 'prefix:tool_name').",
     )
     parser.add_argument(
         "--port",
@@ -452,6 +503,60 @@ def main(argv: list[str] | None = None):
 
     # Store CLI configuration for lifespan bootstrap.
     _CLI_CONFIG.project_path = args.project_path
+
+    # Configure custom index root if provided
+    if args.indexer_path:
+        # Patch ProjectSettings class to use the custom root
+        ProjectSettings.custom_index_root = args.indexer_path
+
+        # Ensure the directory exists
+        try:
+            os.makedirs(args.indexer_path, exist_ok=True)
+        except Exception as e:
+            logger.error(
+                f"Failed to create custom indexer path {args.indexer_path}: {e}"
+            )
+            sys.exit(1)
+
+    # Rename tools if prefix is provided
+    if args.tool_prefix:
+        prefix = args.tool_prefix
+        try:
+            # Access internal tool registry (FastMCP specific)
+            # FastMCP stores tools in _tool_manager._tools or directly in _tools
+            # We need to support both for resilience
+            tool_registry = None
+            if hasattr(mcp, "_tool_manager") and hasattr(mcp._tool_manager, "_tools"):
+                tool_registry = mcp._tool_manager._tools
+            elif hasattr(mcp, "_tools"):
+                tool_registry = mcp._tools
+
+            if tool_registry:
+                # Create a new registry with prefixed names
+                new_registry = {}
+                for name, tool in tool_registry.items():
+                    new_name = f"{prefix}{name}"
+                    tool.name = new_name
+                    new_registry[new_name] = tool
+
+                # Replace the registry
+                if hasattr(mcp, "_tool_manager") and hasattr(
+                    mcp._tool_manager, "_tools"
+                ):
+                    mcp._tool_manager._tools = new_registry
+                elif hasattr(mcp, "_tools"):
+                    mcp._tools = new_registry
+
+                logger.info(
+                    f"Applied tool prefix '{prefix}' to {len(new_registry)} tools"
+                )
+            else:
+                logger.warning("Could not find tool registry to apply prefix")
+
+        except Exception as e:
+            logger.error(f"Failed to apply tool prefix: {e}")
+            # Fatal error: cannot apply requested prefix
+            sys.exit(1)
 
     # For HTTP transports, add project context middleware for per-project isolation
     if args.transport in ("sse", "streamable-http"):
@@ -500,5 +605,6 @@ def main(argv: list[str] | None = None):
             logger.error("Unexpected MCP server error: %s", exc)
             raise
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()

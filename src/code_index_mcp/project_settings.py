@@ -4,26 +4,20 @@ Project Settings Management
 This module provides functionality for managing project settings and persistent data
 for the Code Index MCP server.
 """
-import os
-import json
- 
- 
-import tempfile
+
 import hashlib
- 
+import json
+import os
+import tempfile
 from datetime import datetime
 
-
-from .constants import (
-    SETTINGS_DIR, CONFIG_FILE, INDEX_FILE
-)
-from .search.base import SearchStrategy
-from .search.ugrep import UgrepStrategy
-from .search.ripgrep import RipgrepStrategy
+from .constants import CONFIG_FILE, INDEX_FILE, SETTINGS_DIR
 from .search.ag import AgStrategy
-from .search.grep import GrepStrategy
+from .search.base import SearchStrategy
 from .search.basic import BasicSearchStrategy
-
+from .search.grep import GrepStrategy
+from .search.ripgrep import RipgrepStrategy
+from .search.ugrep import UgrepStrategy
 
 # Prioritized list of search strategies
 SEARCH_STRATEGY_CLASSES = [
@@ -54,6 +48,8 @@ def _get_available_strategies() -> list[SearchStrategy]:
 class ProjectSettings:
     """Class for managing project settings and index data"""
 
+    custom_index_root: str | None = None
+
     def __init__(self, base_path, skip_load=False):
         """Initialize project settings
 
@@ -68,28 +64,36 @@ class ProjectSettings:
 
         # Ensure the base path of the temporary directory exists
         try:
-            # Get system temporary directory
-            system_temp = tempfile.gettempdir()
+            # Check for custom index root
+            if hasattr(self, "custom_index_root") and self.custom_index_root:
+                temp_base_dir = self.custom_index_root
+            else:
+                # Get system temporary directory
+                system_temp = tempfile.gettempdir()
 
-            # Check if the system temporary directory exists and is writable
-            if not os.path.exists(system_temp):
-                # Try using project directory as fallback if available
-                if base_path and os.path.exists(base_path):
-                    system_temp = base_path
-                else:
-                    # Use user's home directory as last resort
-                    system_temp = os.path.expanduser("~")
+                # Check if the system temporary directory exists and is writable
+                if not os.path.exists(system_temp):
+                    # Try using project directory as fallback if available
+                    if base_path and os.path.exists(base_path):
+                        system_temp = base_path
+                    else:
+                        # Use user's home directory as last resort
+                        system_temp = os.path.expanduser("~")
 
-            if not os.access(system_temp, os.W_OK):
-                # Try using project directory as fallback if available
-                if base_path and os.path.exists(base_path) and os.access(base_path, os.W_OK):
-                    system_temp = base_path
-                else:
-                    # Use user's home directory as last resort
-                    system_temp = os.path.expanduser("~")
+                if not os.access(system_temp, os.W_OK):
+                    # Try using project directory as fallback if available
+                    if (
+                        base_path
+                        and os.path.exists(base_path)
+                        and os.access(base_path, os.W_OK)
+                    ):
+                        system_temp = base_path
+                    else:
+                        # Use user's home directory as last resort
+                        system_temp = os.path.expanduser("~")
 
-            # Create code_indexer directory
-            temp_base_dir = os.path.join(system_temp, SETTINGS_DIR)
+                # Create code_indexer directory
+                temp_base_dir = os.path.join(system_temp, SETTINGS_DIR)
 
             if not os.path.exists(temp_base_dir):
                 os.makedirs(temp_base_dir, exist_ok=True)
@@ -99,11 +103,11 @@ class ProjectSettings:
             # If unable to create temporary directory, use .code_indexer in project directory if available
             if base_path and os.path.exists(base_path):
                 temp_base_dir = os.path.join(base_path, ".code_indexer")
-                
+
             else:
                 # Use home directory as last resort
                 temp_base_dir = os.path.join(os.path.expanduser("~"), ".code_indexer")
-                
+
             if not os.path.exists(temp_base_dir):
                 os.makedirs(temp_base_dir, exist_ok=True)
 
@@ -121,12 +125,20 @@ class ProjectSettings:
         except Exception:
             # If error occurs, use .code_indexer in project or home directory as fallback
             if base_path and os.path.exists(base_path):
-                fallback_dir = os.path.join(base_path, ".code_indexer",
-                                          hashlib.md5(base_path.encode()).hexdigest())
+                fallback_dir = os.path.join(
+                    base_path,
+                    ".code_indexer",
+                    hashlib.md5(base_path.encode()).hexdigest(),
+                )
             else:
-                fallback_dir = os.path.join(os.path.expanduser("~"), ".code_indexer",
-                                          "default" if not base_path else hashlib.md5(base_path.encode()).hexdigest())
-            
+                fallback_dir = os.path.join(
+                    os.path.expanduser("~"),
+                    ".code_indexer",
+                    "default"
+                    if not base_path
+                    else hashlib.md5(base_path.encode()).hexdigest(),
+                )
+
             self.settings_path = fallback_dir
             if not os.path.exists(fallback_dir):
                 os.makedirs(fallback_dir, exist_ok=True)
@@ -144,25 +156,43 @@ class ProjectSettings:
             # Check if directory is writable
             if not os.access(self.settings_path, os.W_OK):
                 # If directory is not writable, use .code_indexer in project or home directory as fallback
-                if self.base_path and os.path.exists(self.base_path) and os.access(self.base_path, os.W_OK):
-                    fallback_dir = os.path.join(self.base_path, ".code_indexer",
-                                              os.path.basename(self.settings_path))
+                if (
+                    self.base_path
+                    and os.path.exists(self.base_path)
+                    and os.access(self.base_path, os.W_OK)
+                ):
+                    fallback_dir = os.path.join(
+                        self.base_path,
+                        ".code_indexer",
+                        os.path.basename(self.settings_path),
+                    )
                 else:
-                    fallback_dir = os.path.join(os.path.expanduser("~"), ".code_indexer",
-                                              os.path.basename(self.settings_path))
-                
+                    fallback_dir = os.path.join(
+                        os.path.expanduser("~"),
+                        ".code_indexer",
+                        os.path.basename(self.settings_path),
+                    )
+
                 self.settings_path = fallback_dir
                 if not os.path.exists(fallback_dir):
                     os.makedirs(fallback_dir, exist_ok=True)
         except Exception:
             # If unable to create settings directory, use .code_indexer in project or home directory
             if self.base_path and os.path.exists(self.base_path):
-                fallback_dir = os.path.join(self.base_path, ".code_indexer",
-                                          hashlib.md5(self.base_path.encode()).hexdigest())
+                fallback_dir = os.path.join(
+                    self.base_path,
+                    ".code_indexer",
+                    hashlib.md5(self.base_path.encode()).hexdigest(),
+                )
             else:
-                fallback_dir = os.path.join(os.path.expanduser("~"), ".code_indexer",
-                                          "default" if not self.base_path else hashlib.md5(self.base_path.encode()).hexdigest())
-            
+                fallback_dir = os.path.join(
+                    os.path.expanduser("~"),
+                    ".code_indexer",
+                    "default"
+                    if not self.base_path
+                    else hashlib.md5(self.base_path.encode()).hexdigest(),
+                )
+
             self.settings_path = fallback_dir
             if not os.path.exists(fallback_dir):
                 os.makedirs(fallback_dir, exist_ok=True)
@@ -181,7 +211,6 @@ class ProjectSettings:
             else:
                 return os.path.join(os.path.expanduser("~"), CONFIG_FILE)
 
-
     def _get_timestamp(self):
         """Get current timestamp"""
         return datetime.now().isoformat()
@@ -195,15 +224,14 @@ class ProjectSettings:
         try:
             config_path = self.get_config_path()
             # Add timestamp
-            config['last_updated'] = self._get_timestamp()
+            config["last_updated"] = self._get_timestamp()
 
             # Ensure directory exists
             os.makedirs(os.path.dirname(config_path), exist_ok=True)
 
-            with open(config_path, 'w', encoding='utf-8') as f:
+            with open(config_path, "w", encoding="utf-8") as f:
                 json.dump(config, f, indent=2, ensure_ascii=False)
 
-            
             return config
         except Exception:
             return config
@@ -222,7 +250,7 @@ class ProjectSettings:
             config_path = self.get_config_path()
             if os.path.exists(config_path):
                 try:
-                    with open(config_path, 'r', encoding='utf-8') as f:
+                    with open(config_path, encoding="utf-8") as f:
                         config = json.load(f)
                     return config
                 except (json.JSONDecodeError, UnicodeDecodeError):
@@ -255,10 +283,9 @@ class ProjectSettings:
                     index_path = os.path.join(self.base_path, INDEX_FILE)
                 else:
                     index_path = os.path.join(os.path.expanduser("~"), INDEX_FILE)
-                
 
             # Convert to JSON string if it's an object with to_json method
-            if hasattr(index_data, 'to_json'):
+            if hasattr(index_data, "to_json"):
                 json_data = index_data.to_json()
             elif isinstance(index_data, str):
                 json_data = index_data
@@ -266,10 +293,9 @@ class ProjectSettings:
                 # Assume it's a dictionary and convert to JSON
                 json_data = json.dumps(index_data, indent=2, default=str)
 
-            with open(index_path, 'w', encoding='utf-8') as f:
+            with open(index_path, "w", encoding="utf-8") as f:
                 f.write(json_data)
 
-            
         except Exception:
             # Try saving to project or home directory
             try:
@@ -277,20 +303,20 @@ class ProjectSettings:
                     fallback_path = os.path.join(self.base_path, INDEX_FILE)
                 else:
                     fallback_path = os.path.join(os.path.expanduser("~"), INDEX_FILE)
-                
 
                 # Convert to JSON string if it's an object with to_json method
-                if hasattr(index_data, 'to_json'):
+                if hasattr(index_data, "to_json"):
                     json_data = index_data.to_json()
                 elif isinstance(index_data, str):
                     json_data = index_data
                 else:
                     json_data = json.dumps(index_data, indent=2, default=str)
 
-                with open(fallback_path, 'w', encoding='utf-8') as f:
+                with open(fallback_path, "w", encoding="utf-8") as f:
                     f.write(json_data)
             except Exception:
                 pass
+
     def load_index(self):
         """Load code index from JSON format
 
@@ -306,7 +332,7 @@ class ProjectSettings:
 
             if os.path.exists(index_path):
                 try:
-                    with open(index_path, 'r', encoding='utf-8') as f:
+                    with open(index_path, encoding="utf-8") as f:
                         index_data = json.load(f)
                     return index_data
                 except (json.JSONDecodeError, UnicodeDecodeError):
@@ -322,7 +348,7 @@ class ProjectSettings:
                     fallback_path = os.path.join(os.path.expanduser("~"), INDEX_FILE)
             if os.path.exists(fallback_path):
                 try:
-                    with open(fallback_path, 'r', encoding='utf-8') as f:
+                    with open(fallback_path, encoding="utf-8") as f:
                         index_data = json.load(f)
                     return index_data
                 except Exception:
@@ -331,17 +357,15 @@ class ProjectSettings:
         except Exception:
             return None
 
-
-
     def cleanup_legacy_files(self) -> None:
         """Clean up any legacy index files found."""
         try:
             legacy_files = [
                 os.path.join(self.settings_path, "file_index.pickle"),
                 os.path.join(self.settings_path, "content_cache.pickle"),
-                os.path.join(self.settings_path, INDEX_FILE)  # Legacy JSON
+                os.path.join(self.settings_path, INDEX_FILE),  # Legacy JSON
             ]
-            
+
             for legacy_file in legacy_files:
                 if os.path.exists(legacy_file):
                     try:
@@ -354,7 +378,6 @@ class ProjectSettings:
     def clear(self):
         """Clear config and index files"""
         try:
-
             if os.path.exists(self.settings_path):
                 # Check if directory is writable
                 if not os.access(self.settings_path, os.W_OK):
@@ -375,6 +398,7 @@ class ProjectSettings:
                 pass
         except Exception:
             pass
+
     def get_stats(self):
         """Get statistics for the settings directory
 
@@ -382,22 +406,25 @@ class ProjectSettings:
             dict: Dictionary containing file sizes and update times
         """
         try:
-
             stats = {
-                'settings_path': self.settings_path,
-                'exists': os.path.exists(self.settings_path),
-                'is_directory': os.path.isdir(self.settings_path) if os.path.exists(self.settings_path) else False,
-                'writable': os.access(self.settings_path, os.W_OK) if os.path.exists(self.settings_path) else False,
-                'files': {},
-                'temp_dir': tempfile.gettempdir(),
-                'base_path': self.base_path
+                "settings_path": self.settings_path,
+                "exists": os.path.exists(self.settings_path),
+                "is_directory": os.path.isdir(self.settings_path)
+                if os.path.exists(self.settings_path)
+                else False,
+                "writable": os.access(self.settings_path, os.W_OK)
+                if os.path.exists(self.settings_path)
+                else False,
+                "files": {},
+                "temp_dir": tempfile.gettempdir(),
+                "base_path": self.base_path,
             }
 
-            if stats['exists'] and stats['is_directory']:
+            if stats["exists"] and stats["is_directory"]:
                 try:
                     # Get all files in the directory
                     all_files = os.listdir(self.settings_path)
-                    stats['all_files'] = all_files
+                    stats["all_files"] = all_files
 
                     # Get details for specific files
                     for filename in [CONFIG_FILE, INDEX_FILE]:
@@ -405,37 +432,41 @@ class ProjectSettings:
                         if os.path.exists(file_path):
                             try:
                                 file_stats = os.stat(file_path)
-                                stats['files'][filename] = {
-                                    'path': file_path,
-                                    'size_bytes': file_stats.st_size,
-                                    'last_modified': datetime.fromtimestamp(file_stats.st_mtime).isoformat(),
-                                    'readable': os.access(file_path, os.R_OK),
-                                    'writable': os.access(file_path, os.W_OK)
+                                stats["files"][filename] = {
+                                    "path": file_path,
+                                    "size_bytes": file_stats.st_size,
+                                    "last_modified": datetime.fromtimestamp(
+                                        file_stats.st_mtime
+                                    ).isoformat(),
+                                    "readable": os.access(file_path, os.R_OK),
+                                    "writable": os.access(file_path, os.W_OK),
                                 }
                             except Exception as e:
-                                stats['files'][filename] = {
-                                    'path': file_path,
-                                    'error': str(e)
+                                stats["files"][filename] = {
+                                    "path": file_path,
+                                    "error": str(e),
                                 }
                 except Exception as e:
-                    stats['list_error'] = str(e)
+                    stats["list_error"] = str(e)
 
             # Check fallback path
             if self.base_path and os.path.exists(self.base_path):
                 fallback_dir = os.path.join(self.base_path, ".code_indexer")
             else:
                 fallback_dir = os.path.join(os.path.expanduser("~"), ".code_indexer")
-            stats['fallback_path'] = fallback_dir
-            stats['fallback_exists'] = os.path.exists(fallback_dir)
-            stats['fallback_is_directory'] = os.path.isdir(fallback_dir) if os.path.exists(fallback_dir) else False
+            stats["fallback_path"] = fallback_dir
+            stats["fallback_exists"] = os.path.exists(fallback_dir)
+            stats["fallback_is_directory"] = (
+                os.path.isdir(fallback_dir) if os.path.exists(fallback_dir) else False
+            )
 
             return stats
         except Exception as e:
             return {
-                'error': str(e),
-                'settings_path': self.settings_path,
-                'temp_dir': tempfile.gettempdir(),
-                'base_path': self.base_path
+                "error": str(e),
+                "settings_path": self.settings_path,
+                "temp_dir": tempfile.gettempdir(),
+                "base_path": self.base_path,
             }
 
     def get_search_tools_config(self):
@@ -446,7 +477,9 @@ class ProjectSettings:
         """
         return {
             "available_tools": [s.name for s in self.available_strategies],
-            "preferred_tool": self.get_preferred_search_tool().name if self.available_strategies else None
+            "preferred_tool": self.get_preferred_search_tool().name
+            if self.available_strategies
+            else None,
         }
 
     def get_preferred_search_tool(self) -> SearchStrategy | None:
@@ -464,9 +497,8 @@ class ProjectSettings:
         """
         Force a refresh of the available search tools list.
         """
-        
+
         self.available_strategies = _get_available_strategies()
-        
 
     def get_file_watcher_config(self) -> dict:
         """
@@ -482,13 +514,26 @@ class ProjectSettings:
             "additional_exclude_patterns": [],
             "monitored_extensions": [],  # Empty = use all supported extensions
             "exclude_patterns": [
-                ".git", ".svn", ".hg",
-                "node_modules", "__pycache__", ".venv", "venv",
-                ".DS_Store", "Thumbs.db",
-                "dist", "build", "target", ".idea", ".vscode",
-                ".pytest_cache", ".coverage", ".tox",
-                "bin", "obj"
-            ]
+                ".git",
+                ".svn",
+                ".hg",
+                "node_modules",
+                "__pycache__",
+                ".venv",
+                "venv",
+                ".DS_Store",
+                "Thumbs.db",
+                "dist",
+                "build",
+                "target",
+                ".idea",
+                ".vscode",
+                ".pytest_cache",
+                ".coverage",
+                ".tox",
+                "bin",
+                "obj",
+            ],
         }
 
         # Merge with loaded config
