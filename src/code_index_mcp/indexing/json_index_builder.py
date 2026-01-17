@@ -5,6 +5,7 @@ This replaces the monolithic parser implementation with a clean,
 maintainable Strategy pattern architecture.
 """
 
+import io
 import logging
 import os
 import time
@@ -90,6 +91,9 @@ class JSONIndexBuilder:
             Tuple of (symbols, file_info, language, is_specialized) or None on error
         """
         try:
+            ext = Path(file_path).suffix.lower()
+            rel_path = os.path.relpath(file_path, self.project_path).replace('\\', '/')
+
             # Check file size for lightweight mode
             use_lightweight = False
             try:
@@ -100,17 +104,24 @@ class JSONIndexBuilder:
             except OSError:
                 pass
 
-            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-                if use_lightweight:
-                    # Read only first N lines for lightweight mode
-                    lines = []
-                    for i, line in enumerate(f):
-                        if i >= LIGHTWEIGHT_MAX_LINES:
-                            break
-                        lines.append(line)
-                    content = ''.join(lines)
-                else:
-                    content = f.read()
+            with open(file_path, "rb") as raw:
+                sample = raw.read(8192)
+                if b"\x00" in sample:
+                    logger.info("Skipping binary file (NUL bytes): %s", rel_path)
+                    return None
+                raw.seek(0)
+
+                with io.TextIOWrapper(raw, encoding="utf-8", errors="ignore") as f:
+                    if use_lightweight:
+                        # Read only first N lines for lightweight mode
+                        lines = []
+                        for i, line in enumerate(f):
+                            if i >= LIGHTWEIGHT_MAX_LINES:
+                                break
+                            lines.append(line)
+                        content = ''.join(lines)
+                    else:
+                        content = f.read()
 
             # Check line count for lightweight mode
             line_count = content.count('\n')
@@ -120,9 +131,6 @@ class JSONIndexBuilder:
                 # Truncate content to first N lines
                 lines = content.split('\n')[:LIGHTWEIGHT_MAX_LINES]
                 content = '\n'.join(lines)
-
-            ext = Path(file_path).suffix.lower()
-            rel_path = os.path.relpath(file_path, self.project_path).replace('\\', '/')
 
             # Get appropriate strategy
             strategy = self.strategy_factory.get_strategy(ext)
@@ -266,32 +274,40 @@ class JSONIndexBuilder:
         if not pending_calls:
             return
 
-        short_index: Dict[str, List[str]] = defaultdict(list)
+        def _add_unique(mapping: Dict[str, Optional[str]], key: str, symbol_id: str) -> None:
+            if not key:
+                return
+            if key not in mapping:
+                mapping[key] = symbol_id
+                return
+            if mapping[key] != symbol_id:
+                mapping[key] = None
+
+        unique_short_name: Dict[str, Optional[str]] = {}
+        unique_suffix: Dict[str, Optional[str]] = {}
+
         for symbol_id in all_symbols:
             short_name = symbol_id.split("::")[-1]
-            short_index[short_name].append(symbol_id)
+            _add_unique(unique_short_name, short_name, symbol_id)
+
+            parts = short_name.split(".") if short_name else []
+            for i in range(1, len(parts)):
+                suffix = ".".join(parts[-i:])
+                _add_unique(unique_suffix, suffix, symbol_id)
 
         for caller, called in pending_calls:
-            target_ids: List[str] = []
+            target_id: Optional[str] = None
             if called in all_symbols:
-                target_ids = [called]
+                target_id = called
             else:
-                if called in short_index:
-                    target_ids = short_index[called]
-                if not target_ids and "." in called:
-                    target_ids = short_index.get(called, [])
-                if not target_ids:
-                    matches: List[str] = []
-                    suffix = f".{called}"
-                    for short_name, ids in short_index.items():
-                        if short_name.endswith(suffix):
-                            matches.extend(ids)
-                    target_ids = matches
+                target_id = unique_short_name.get(called)
+                if not target_id:
+                    target_id = unique_suffix.get(called)
 
-            if len(target_ids) != 1:
+            if not target_id:
                 continue
 
-            symbol_info = all_symbols[target_ids[0]]
+            symbol_info = all_symbols[target_id]
             if caller not in symbol_info.called_by:
                 symbol_info.called_by.append(caller)
 
