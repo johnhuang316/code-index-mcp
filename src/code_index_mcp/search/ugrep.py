@@ -75,7 +75,7 @@ class UgrepStrategy(SearchStrategy):
             normalized = directory.strip()
             if not normalized or normalized in processed_patterns:
                 continue
-            cmd.extend(['--ignore', f'**/{normalized}/**'])
+            cmd.extend(['--exclude-dir', normalized])
             processed_patterns.add(normalized)
 
         for pattern in exclude_file_patterns:
@@ -83,12 +83,12 @@ class UgrepStrategy(SearchStrategy):
             if not normalized or normalized in processed_patterns:
                 continue
             if normalized.startswith('!'):
-                ignore_pattern = normalized[1:]
+                exclude_pattern = normalized[1:]
             elif any(ch in normalized for ch in '*?[') or '/' in normalized:
-                ignore_pattern = normalized
+                exclude_pattern = normalized
             else:
-                ignore_pattern = f'**/{normalized}'
-            cmd.extend(['--ignore', ignore_pattern])
+                exclude_pattern = f'**/{normalized}'
+            cmd.extend(['--exclude', exclude_pattern])
             processed_patterns.add(normalized)
 
         # Add '--' to treat pattern as a literal argument, preventing injection
