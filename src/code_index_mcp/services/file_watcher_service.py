@@ -10,6 +10,7 @@ It uses the watchdog library for cross-platform file system event monitoring.
 import logging
 import os
 import platform
+import select
 import traceback
 from threading import Timer
 from typing import Optional, Callable, List, Type
@@ -48,6 +49,8 @@ def _get_observer_class(observer_type: str = "auto") -> Type:
     system = platform.system()
 
     if observer_type == "kqueue":
+        if not hasattr(select, "KQ_FILTER_VNODE"):
+            raise ImportError("kqueue observer is not available on this platform")
         from watchdog.observers.kqueue import KqueueObserver
         return KqueueObserver
     elif observer_type == "fsevents":
