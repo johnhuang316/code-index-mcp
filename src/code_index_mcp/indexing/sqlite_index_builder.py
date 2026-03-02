@@ -284,39 +284,47 @@ class SQLiteIndexBuilder(JSONIndexBuilder):
         if not pending_calls:
             return
 
-        rows = list(
-            conn.execute(
-                "SELECT symbol_id, short_name, called_by FROM symbols"
-            )
-        )
+        rows = list(conn.execute("SELECT symbol_id, short_name, called_by FROM symbols"))
         symbol_map = {row["symbol_id"]: row for row in rows}
-        short_index: Dict[str, List[str]] = defaultdict(list)
+
+        def _add_unique(mapping: Dict[str, Optional[str]], key: str, symbol_id: str) -> None:
+            if not key:
+                return
+            if key not in mapping:
+                mapping[key] = symbol_id
+                return
+            if mapping[key] != symbol_id:
+                mapping[key] = None
+
+        unique_short_name: Dict[str, Optional[str]] = {}
+        unique_suffix: Dict[str, Optional[str]] = {}
         for row in rows:
-            short_name = row["short_name"]
-            if short_name:
-                short_index[short_name].append(row["symbol_id"])
+            short_name = row["short_name"] or ""
+            symbol_id = row["symbol_id"]
+            _add_unique(unique_short_name, short_name, symbol_id)
+
+            parts = short_name.split(".") if short_name else []
+            # Record proper suffixes only (exclude the full name) to match the
+            # previous suffix-scan behavior that required a leading dot.
+            for i in range(1, len(parts)):
+                suffix = ".".join(parts[-i:])
+                _add_unique(unique_suffix, suffix, symbol_id)
 
         updates: Dict[str, set] = defaultdict(set)
 
         for caller, called in pending_calls:
-            target_ids: List[str] = []
+            target_id: Optional[str] = None
             if called in symbol_map:
-                target_ids = [called]
+                target_id = called
             else:
-                if called in short_index:
-                    target_ids = short_index[called]
-                if not target_ids:
-                    suffix = f".{called}"
-                    matches: List[str] = []
-                    for short_name, ids in short_index.items():
-                        if short_name and short_name.endswith(suffix):
-                            matches.extend(ids)
-                    target_ids = matches
+                target_id = unique_short_name.get(called)
+                if not target_id:
+                    target_id = unique_suffix.get(called)
 
-            if len(target_ids) != 1:
+            if not target_id:
                 continue
 
-            updates[target_ids[0]].add(caller)
+            updates[target_id].add(caller)
 
         for symbol_id, callers in updates.items():
             row = symbol_map.get(symbol_id)
