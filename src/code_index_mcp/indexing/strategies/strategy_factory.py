@@ -14,6 +14,7 @@ from .csharp_strategy import CSharpParsingStrategy
 from .go_strategy import GoParsingStrategy
 from .objective_c_strategy import ObjectiveCParsingStrategy
 from .zig_strategy import ZigParsingStrategy
+from .php_strategy import PhpParsingStrategy
 from .fallback_strategy import FallbackParsingStrategy
 
 
@@ -77,7 +78,6 @@ class StrategyFactory:
             '.cxx': 'cpp', '.cc': 'cpp', '.hxx': 'hpp', '.hh': 'hpp',
             '.cs': 'csharp',
             '.rb': 'ruby',
-            '.php': 'php',
             '.swift': 'swift',
             '.kt': 'kotlin', '.kts': 'kotlin',
             '.rs': 'rust',
@@ -146,6 +146,11 @@ class StrategyFactory:
                 zig_strategy = ZigParsingStrategy()
                 for ext in zig_strategy.get_supported_extensions():
                     self._strategies[ext] = zig_strategy
+
+                # PHP
+                php_strategy = PhpParsingStrategy()
+                for ext in php_strategy.get_supported_extensions():
+                    self._strategies[ext] = php_strategy
                     
                 self._initialized = True
                 
