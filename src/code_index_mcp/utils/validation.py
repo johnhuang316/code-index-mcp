@@ -138,7 +138,6 @@ class ValidationHelper:
             return "Search pattern cannot be empty"
 
         if regex:
-            # Basic regex validation - check for potentially dangerous patterns
             try:
                 re.compile(pattern)
             except re.error as e:
@@ -146,18 +145,6 @@ class ValidationHelper:
                     f"Invalid regex pattern: {str(e)}. "
                     "If you intended a literal search, pass regex=False."
                 )
-
-            # Check for potentially expensive regex patterns (basic ReDoS protection)
-            dangerous_patterns = [
-                r'\(\?\=.*\)\+',  # Positive lookahead with quantifier
-                r'\(\?\!.*\)\+',  # Negative lookahead with quantifier
-                r'\(\?\<\=.*\)\+',  # Positive lookbehind with quantifier
-                r'\(\?\<\!.*\)\+',  # Negative lookbehind with quantifier
-            ]
-
-            for dangerous in dangerous_patterns:
-                if re.search(dangerous, pattern):
-                    return "Potentially dangerous regex pattern detected"
 
         return None
 

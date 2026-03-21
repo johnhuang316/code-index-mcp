@@ -286,7 +286,7 @@ pip install code-index-mcp
 ### 🔍 **搜尋與探索**
 | 工具 | 描述 |
 |------|------|
-| **`search_code_advanced`** | 智慧搜尋，支援正規表達式、模糊匹配和檔案篩選，預設每頁回傳 10 筆結果，可透過 `max_results` 與 `start_index` 調整 |
+| **`search_code_advanced`** | 智慧搜尋，預設為字面匹配，可透過 `regex=True` 啟用正規表達式，並支援模糊匹配、檔案篩選與分頁結果（預設每頁 10 筆）；正規表達式模式需要原生搜尋工具，因為基本後備模式僅支援字面搜尋 |
 | **`find_files`** | 使用萬用字元模式尋找檔案（例如 `**/*.py`） |
 | **`get_file_summary`** | 分析檔案結構、函式、匯入和複雜度（需要深度索引） |
 
@@ -333,9 +333,9 @@ pip install code-index-mcp
 <summary><strong>程式碼模式搜尋</strong></summary>
 
 ```
-使用正規表達式搜尋所有符合 "get.*Data" 的函式呼叫
+使用 `regex=True` 搜尋所有符合 "get.*Data" 的函式呼叫
 ```
-*找到：`getData()`、`getUserData()`、`getFormData()` 等*
+*找到：`getData()`、`getUserData()`、`getFormData()` 等。正規表達式搜尋為選用功能；請安裝原生搜尋工具並搭配 `regex=True`，因為基本後備模式維持字面搜尋。*
 
 </details>
 
@@ -355,7 +355,7 @@ pip install code-index-mcp
 ```
 只在 Python 檔案中搜尋 "API_ENDPOINT"
 ```
-*使用：`search_code_advanced`，`file_pattern: "*.py"`（預設回傳 10 筆；使用 `max_results` 擴充或 `start_index` 換頁）*
+*使用：`search_code_advanced` 的字面搜尋搭配 `file_pattern: "*.py"`（預設回傳 10 筆；使用 `max_results` 擴充或 `start_index` 換頁）*
 
 </details>
 

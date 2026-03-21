@@ -46,6 +46,7 @@ CLAUDE.local.md
 claude_*
 COMMIT_MESSAGE.txt
 RELEASE_NOTE.txt
+.worktrees/
 
 .llm-context/
 AGENTS.md

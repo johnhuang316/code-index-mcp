@@ -190,7 +190,7 @@ Linux와 macOS는 운영체제가 `HOME`과 XDG 경로를 기본으로 제공하
 ### 🔍 **검색 & 탐색**
 | 도구 | 설명 |
 |------|------|
-| **`search_code_advanced`** | 정규식, 퍼지 매칭, 파일 필터링을 지원하는 스마트 검색 (기본적으로 페이지당 10개 결과 반환, `max_results`·`start_index`로 조정 가능) |
+| **`search_code_advanced`** | 스마트 검색. 기본은 리터럴 검색이며 정규식은 `regex=True`일 때만 활성화됩니다. 퍼지 매칭, 파일 필터링, 페이징(기본 10개 결과)을 지원하며, 정규식 모드는 네이티브 검색 도구가 필요합니다. 기본 폴백은 리터럴 검색만 지원합니다 |
 | **`find_files`** | 글롭 패턴으로 파일 찾기 (예: `**/*.py`) |
 | **`get_file_summary`** | 파일 구조, 함수, 임포트, 복잡도를 분석 (심층 인덱스 필요) |
 
@@ -237,9 +237,9 @@ src/api/userService.ts 요약을 알려줘
 <summary><strong>코드 패턴 검색</strong></summary>
 
 ```
-"get.*Data"에 해당하는 함수 호출을 정규식으로 찾아줘
+`regex=True`로 "get.*Data"에 해당하는 함수 호출을 찾아줘
 ```
-*예: `getData()`, `getUserData()`, `getFormData()`*
+*예: `getData()`, `getUserData()`, `getFormData()`. 정규식 검색은 옵트인입니다. 네이티브 검색 도구를 설치한 뒤 `regex=True`를 사용해야 하며, 기본 폴백은 리터럴 검색으로 유지됩니다.*
 
 </details>
 
@@ -259,7 +259,7 @@ src/api/userService.ts 요약을 알려줘
 ```
 Python 파일에서만 "API_ENDPOINT" 를 찾아줘
 ```
-*`search_code_advanced` + `file_pattern="*.py"` (기본 10개 결과, `max_results`로 확장하고 `start_index`로 페이지 이동)*
+*`search_code_advanced`의 리터럴 검색 + `file_pattern="*.py"` (기본 10개 결과, `max_results`로 확장하고 `start_index`로 페이지 이동)*
 
 </details>
 

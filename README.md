@@ -282,7 +282,7 @@ Then configure:
 ### 🔍 **Search & Discovery**
 | Tool | Description |
 |------|-------------|
-| **`search_code_advanced`** | Smart search with regex, fuzzy matching, file filtering, and paginated results (10 per page by default) |
+| **`search_code_advanced`** | Smart search with literal-by-default matching, optional `regex=True`, fuzzy matching, file filtering, and paginated results (10 per page by default); regex mode requires a native search tool because the basic fallback is literal-only |
 | **`find_files`** | Locate files using glob patterns (e.g., `**/*.py`) |
 | **`get_file_summary`** | Analyze file structure, functions, imports, and complexity (requires deep index) |
 
@@ -329,9 +329,9 @@ Give me a summary of src/api/userService.ts
 <summary><strong>Code Pattern Search</strong></summary>
 
 ```
-Search for all function calls matching "get.*Data" using regex
+Search for all function calls matching "get.*Data" using `regex=True`
 ```
-*Finds: `getData()`, `getUserData()`, `getFormData()`, etc.*
+*Finds: `getData()`, `getUserData()`, `getFormData()`, etc. Regex search is opt-in; install a native search tool and use `regex=True` because the basic fallback stays literal-only.*
 
 </details>
 
@@ -351,7 +351,7 @@ Find authentication-related functions with fuzzy search for 'authUser'
 ```
 Search for "API_ENDPOINT" only in Python files
 ```
-*Uses: `search_code_advanced` with `file_pattern: "*.py"` (defaults to 10 matches; use `max_results` to expand or `start_index` to page)*
+*Uses: `search_code_advanced` with literal matching and `file_pattern: "*.py"` (defaults to 10 matches; use `max_results` to expand or `start_index` to page)*
 
 </details>
 

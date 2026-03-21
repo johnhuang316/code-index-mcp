@@ -5,7 +5,7 @@ import shutil
 import subprocess
 from typing import Dict, List, Optional, Tuple
 
-from .base import SearchStrategy, parse_search_output, create_word_boundary_pattern, is_safe_regex_pattern
+from .base import SearchStrategy, parse_search_output, create_word_boundary_pattern
 
 class UgrepStrategy(SearchStrategy):
     """Search strategy using the 'ugrep' (ug) command-line tool."""
@@ -49,12 +49,7 @@ class UgrepStrategy(SearchStrategy):
         if fuzzy:
             # ugrep has native fuzzy search support
             cmd.append('--fuzzy')
-        elif regex:
-            # Use regex mode - check for safety first
-            if not is_safe_regex_pattern(pattern):
-                raise ValueError(f"Potentially unsafe regex pattern: {pattern}")
-            # Don't add --fixed-strings, use regex mode
-        else:
+        elif not regex:
             # Use literal string search
             cmd.append('--fixed-strings')
 

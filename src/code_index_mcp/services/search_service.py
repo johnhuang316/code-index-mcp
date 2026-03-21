@@ -10,7 +10,6 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from .base_service import BaseService
 from ..utils import FileFilter, ResponseFormatter, ValidationHelper
-from ..search.base import is_safe_regex_pattern
 
 
 class SearchService(BaseService):
@@ -35,7 +34,7 @@ class SearchService(BaseService):
         self._require_project_setup()
 
         if regex is None:
-            regex = is_safe_regex_pattern(pattern)
+            regex = False
 
         error = ValidationHelper.validate_search_pattern(pattern, regex)
         if error:
@@ -56,6 +55,12 @@ class SearchService(BaseService):
         strategy = self.settings.get_preferred_search_tool()
         if not strategy:
             raise ValueError("No search strategies available")
+
+        if regex and getattr(strategy, 'name', '').lower() == 'basic':
+            raise ValueError(
+                "Regex mode requires an external search tool; "
+                "basic search only supports literal and fuzzy matching"
+            )
 
         self._configure_strategy(strategy)
 
@@ -100,11 +105,13 @@ class SearchService(BaseService):
             return {"error": "Settings not available"}
 
         config = self.settings.get_search_tools_config()
+        available_tools = config.get('available_tools', [])
+        supports_regex = any(tool.lower() != 'basic' for tool in available_tools)
 
         capabilities = {
-            "available_tools": config.get('available_tools', []),
+            "available_tools": available_tools,
             "preferred_tool": config.get('preferred_tool', 'basic'),
-            "supports_regex": True,
+            "supports_regex": supports_regex,
             "supports_fuzzy": True,
             "supports_case_sensitivity": True,
             "supports_context_lines": True,

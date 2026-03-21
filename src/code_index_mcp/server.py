@@ -285,15 +285,16 @@ def search_code_advanced(
     ctx: Context,
     case_sensitive: bool = True,
     context_lines: int = 0,
-    file_pattern: str = None,
+    file_pattern: str | None = None,
     fuzzy: bool = False,
-    regex: bool = None,
+    regex: bool | None = None,
     start_index: int = 0,
     max_results: int | None = 10,
 ) -> dict[str, Any]:
     """
 Search for code pattern with pagination. Auto-selects best search tool (ugrep/ripgrep/ag/grep).
-Supports glob file_pattern (e.g., "*.py"), regex patterns, and fuzzy matching (ugrep only).
+Supports glob file_pattern (e.g., "*.py"), explicit regex mode, and fuzzy matching (ugrep only).
+Regex matching requires passing regex=True and may require an external search tool.
 """
     return SearchService(ctx).search_code(
         pattern=pattern,

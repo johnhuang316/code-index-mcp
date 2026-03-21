@@ -5,7 +5,7 @@ import shutil
 import subprocess
 from typing import Dict, List, Optional, Tuple
 
-from .base import SearchStrategy, parse_search_output, create_word_boundary_pattern, is_safe_regex_pattern
+from .base import SearchStrategy, parse_search_output, create_word_boundary_pattern
 
 class GrepStrategy(SearchStrategy):
     """
@@ -53,22 +53,14 @@ class GrepStrategy(SearchStrategy):
         search_pattern = pattern
         
         if regex:
-            # Use regex mode - check for safety first
-            if not is_safe_regex_pattern(pattern):
-                raise ValueError(f"Potentially unsafe regex pattern: {pattern}")
             cmd.append('-E')  # Extended Regular Expressions
         elif fuzzy:
             # Use word boundary pattern for partial matching
             search_pattern = create_word_boundary_pattern(pattern)
             cmd.append('-E')  # Extended Regular Expressions
         else:
-            # Auto-detect if pattern looks like a safe regex
-            if is_safe_regex_pattern(pattern):
-                # Pattern contains regex chars, use extended regex mode
-                cmd.append('-E')
-            else:
-                # Use literal string search
-                cmd.append('-F')
+            # Regex is explicit; default searches are literal.
+            cmd.append('-F')
 
         if not case_sensitive:
             cmd.append('-i')

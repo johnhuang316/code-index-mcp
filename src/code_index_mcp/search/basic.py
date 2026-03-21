@@ -7,7 +7,7 @@ import re
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-from .base import SearchStrategy, create_word_boundary_pattern, is_safe_regex_pattern
+from .base import SearchStrategy, create_word_boundary_pattern
 
 class BasicSearchStrategy(SearchStrategy):
     """
@@ -15,7 +15,8 @@ class BasicSearchStrategy(SearchStrategy):
 
     This strategy iterates through files and lines manually. It's a fallback
     for when no advanced command-line search tools are available.
-    It does not support context lines.
+    It supports literal and fuzzy matching only.
+    It does not support context lines or regex mode.
     """
 
     @property
@@ -52,7 +53,9 @@ class BasicSearchStrategy(SearchStrategy):
         """
         Execute a basic, line-by-line search.
 
-        Note: This implementation does not support context_lines.
+        Note: This implementation supports literal and fuzzy matching only.
+        It does not support context_lines or regex mode.
+
         Args:
             pattern: The search pattern
             base_path: Directory to search in
@@ -60,19 +63,20 @@ class BasicSearchStrategy(SearchStrategy):
             context_lines: Number of context lines (not supported)
             file_pattern: File pattern to filter
             fuzzy: Enable word boundary matching
-            regex: Enable regex pattern matching
+            regex: Request regex matching (rejected for the basic strategy)
         """
         results: Dict[str, List[Tuple[int, str]]] = {}
+
+        if regex:
+            raise ValueError(
+                "Regex mode requires an external search tool; "
+                "basic search only supports literal and fuzzy matching"
+            )
         
         flags = 0 if case_sensitive else re.IGNORECASE
         
         try:
-            if regex:
-                # Use regex mode - check for safety first
-                if not is_safe_regex_pattern(pattern):
-                    raise ValueError(f"Potentially unsafe regex pattern: {pattern}")
-                search_regex = re.compile(pattern, flags)
-            elif fuzzy:
+            if fuzzy:
                 # Use word boundary pattern for partial matching
                 search_pattern = create_word_boundary_pattern(pattern)
                 search_regex = re.compile(search_pattern, flags)
@@ -80,7 +84,7 @@ class BasicSearchStrategy(SearchStrategy):
                 # Use literal string search
                 search_regex = re.compile(re.escape(pattern), flags)
         except re.error as e:
-            raise ValueError(f"Invalid regex pattern: {pattern}, error: {e}")
+            raise ValueError(f"Invalid search pattern: {pattern}, error: {e}")
 
         file_filter = getattr(self, 'file_filter', None)
         base = Path(base_path)

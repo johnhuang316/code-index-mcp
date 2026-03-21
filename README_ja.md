@@ -289,7 +289,7 @@ pip install code-index-mcp
 ### 🔍 **検索・発見**
 | ツール | 説明 |
 |--------|------|
-| **`search_code_advanced`** | 正規表現、ファジーマッチング、ファイルフィルタリング対応のスマート検索。デフォルトで 1 ページあたり 10 件を返し、`max_results` と `start_index` で調整可能 |
+| **`search_code_advanced`** | スマート検索。デフォルトはリテラル一致で、正規表現は `regex=True` を指定したときのみ有効。ファジーマッチング、ファイルフィルタリング、ページング（デフォルト 10 件）に対応し、正規表現モードはネイティブ検索ツールが必要。基本フォールバックはリテラル検索のみ |
 | **`find_files`** | globパターンを使用したファイル検索（例：`**/*.py`） |
 | **`get_file_summary`** | ファイル構造、関数、インポート、複雑度の解析（深いインデックスが必要） |
 
@@ -336,9 +336,9 @@ src/api/userService.ts の要約を教えてください
 <summary><strong>コードパターン検索</strong></summary>
 
 ```
-正規表現を使って "get.*Data" にマッチする全ての関数呼び出しを検索してください
+`regex=True` を使って "get.*Data" にマッチする全ての関数呼び出しを検索してください
 ```
-*発見：`getData()`、`getUserData()`、`getFormData()` など*
+*発見：`getData()`、`getUserData()`、`getFormData()` など。正規表現検索はオプトインです。ネイティブ検索ツールを導入して `regex=True` を使ってください。基本フォールバックはリテラル検索のままです。*
 
 </details>
 
@@ -358,7 +358,7 @@ src/api/userService.ts の要約を教えてください
 ```
 Pythonファイルのみで "API_ENDPOINT" を検索してください
 ```
-*使用ツール：`search_code_advanced`、`file_pattern: "*.py"`（デフォルトは 10 件。`max_results` で件数を増やし、`start_index` でページ送り）*
+*使用ツール：`search_code_advanced` のリテラル検索と `file_pattern: "*.py"`（デフォルトは 10 件。`max_results` で件数を増やし、`start_index` でページ送り）*
 
 </details>
 

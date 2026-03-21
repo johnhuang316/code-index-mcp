@@ -119,59 +119,6 @@ def create_word_boundary_pattern(pattern: str) -> str:
         boundary_pattern = f"\\b{escaped}\\b"
     
     return boundary_pattern
-
-
-def is_safe_regex_pattern(pattern: str) -> bool:
-    """
-    Check if a pattern appears to be a safe regex pattern.
-    
-    Args:
-        pattern: The search pattern to check
-        
-    Returns:
-        True if the pattern looks like a safe regex, False otherwise
-    """
-    # Strong indicators of regex intent
-    strong_regex_indicators = ['|', '(', ')', '[', ']', '^', '$']
-    
-    # Weaker indicators that need context
-    weak_regex_indicators = ['.', '*', '+', '?']
-    
-    # Check for strong regex indicators
-    has_strong_regex = any(char in pattern for char in strong_regex_indicators)
-    
-    # Check for weak indicators with context
-    has_weak_regex = any(char in pattern for char in weak_regex_indicators)
-    
-    # If has strong indicators, likely regex
-    if has_strong_regex:
-        # Still check for dangerous patterns
-        dangerous_patterns = [
-            r'(.+)+',  # Nested quantifiers
-            r'(.*)*',  # Nested stars
-            r'(.{0,})+',  # Potential ReDoS patterns
-        ]
-        
-        has_dangerous_patterns = any(dangerous in pattern for dangerous in dangerous_patterns)
-        return not has_dangerous_patterns
-    
-    # If only weak indicators, need more context
-    if has_weak_regex:
-        # Patterns like ".*", ".+", "file.*py" look like regex
-        # But "file.txt", "test.py" look like literal filenames
-        regex_like_patterns = [
-            r'\.\*',  # .*
-            r'\.\+',  # .+
-            r'\.\w*\*',  # .something*
-            r'\*\.',  # *.
-            r'\w+\.\*\w*',  # word.*word
-        ]
-        
-        return any(re.search(regex_pattern, pattern) for regex_pattern in regex_like_patterns)
-    
-    return False
-
-
 class SearchStrategy(ABC):
     """
     Abstract base class for a search strategy.
