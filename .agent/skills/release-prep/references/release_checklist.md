@@ -9,8 +9,7 @@ git status
 git branch --show-current
 ```
 
-- Stop if `git status` is not clean or if you are not on the intended release
-  branch.
+- Stop if `git status` is not clean or if you are not on the intended release branch.
 
 - Review changes since last tag:
 
@@ -46,8 +45,7 @@ uv lock
 git diff --stat
 ```
 
-- Expected: only release-related files change. If other files appear, explain and
-  review them before commit.
+- Expected: only release-related files change. If other files appear, explain and review them before commit.
 
 - Commit release bump:
 
