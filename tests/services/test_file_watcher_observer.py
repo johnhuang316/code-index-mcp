@@ -5,6 +5,7 @@ observer class based on platform and configuration.
 """
 
 import platform
+import select
 import pytest
 from unittest.mock import patch
 
@@ -41,6 +42,8 @@ def test_explicit_kqueue():
     """Verify explicit kqueue selection works."""
     if platform.system() == 'Windows':
         pytest.skip("kqueue observer import fails on Windows")
+    if not hasattr(select, "KQ_FILTER_VNODE"):
+        pytest.skip("kqueue observer not supported on this platform")
     ObserverClass = _get_observer_class('kqueue')
     assert 'Kqueue' in ObserverClass.__name__
 
