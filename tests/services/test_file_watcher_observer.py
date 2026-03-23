@@ -48,6 +48,13 @@ def test_explicit_kqueue():
     assert 'Kqueue' in ObserverClass.__name__
 
 
+def test_kqueue_raises_error_on_unsupported_platform():
+    """Verify kqueue raises ImportError when platform doesn't support it."""
+    with patch('code_index_mcp.services.file_watcher_service.hasattr', return_value=False):
+        with pytest.raises(ImportError, match="kqueue observer is not available on this platform"):
+            _get_observer_class('kqueue')
+
+
 def test_explicit_polling():
     """Verify explicit polling selection works."""
     ObserverClass = _get_observer_class('polling')
