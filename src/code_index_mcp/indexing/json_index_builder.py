@@ -496,7 +496,7 @@ class JSONIndexBuilder:
                 # Check if this symbol belongs to our file
                 if symbol_file == file_path:
                     symbol_type = symbol_data.get("type", "unknown")
-                    symbol_name = symbol_id.split("::")[-1]  # Extract symbol name from ID
+                    symbol_name = symbol_id.split("::", 1)[-1]  # Keep namespaced symbol identity
 
                     # Create symbol info
                     symbol_info = {

@@ -2,12 +2,12 @@
 Code Intelligence Service - Business logic for code analysis and understanding.
 
 This service handles the business logic for analyzing code files using the new
-JSON-based indexing system optimized for LLM consumption.
+SQLite-backed deep indexing optimized for LLM consumption.
 """
 
 import logging
 import os
-from typing import Dict, Any
+from typing import Dict, Any, List
 
 from .base_service import BaseService
 
@@ -22,10 +22,10 @@ logger = logging.getLogger(__name__)
 
 class CodeIntelligenceService(BaseService):
     """
-    Business service for code analysis and intelligence using JSON indexing.
+    Business service for code analysis and intelligence using deep indexing.
 
     This service provides comprehensive code analysis using the optimized
-    JSON-based indexing system for fast LLM-friendly responses.
+    SQLite-backed deep index for fast LLM-friendly responses.
     """
 
     def __init__(self, ctx):
@@ -62,7 +62,7 @@ class CodeIntelligenceService(BaseService):
         if index_manager.index_builder:
             logger.info(f"Index manager state - Has index: {index_manager.index_builder.in_memory_index is not None}")
         
-        # Get file summary from JSON index
+        # Get file summary from the deep index
         summary = index_manager.get_file_summary(file_path)
         logger.info(f"Summary result: {summary is not None}")
 
@@ -136,29 +136,20 @@ class CodeIntelligenceService(BaseService):
                 "symbol_name": symbol_name
             }
 
-        # Search for the symbol in functions, methods, and classes
-        symbol_info = None
-        symbol_type = None
-
-        for func in summary.get("functions", []):
-            if func.get("name") == symbol_name:
-                symbol_info = func
-                symbol_type = "function"
-                break
-
-        if not symbol_info:
-            for method in summary.get("methods", []):
-                if method.get("name") == symbol_name or method.get("name", "").endswith(f".{symbol_name}"):
-                    symbol_info = method
-                    symbol_type = "method"
-                    break
-
-        if not symbol_info:
-            for cls in summary.get("classes", []):
-                if cls.get("name") == symbol_name:
-                    symbol_info = cls
-                    symbol_type = "class"
-                    break
+        exact_matches = self._find_symbol_matches(summary, symbol_name, exact_only=True)
+        if len(exact_matches) == 1:
+            symbol_type, symbol_info = exact_matches[0]
+        elif len(exact_matches) > 1:
+            return self._ambiguous_symbol_response(file_path, symbol_name, exact_matches)
+        else:
+            short_matches = self._find_symbol_matches(summary, symbol_name, exact_only=False)
+            if len(short_matches) == 1:
+                symbol_type, symbol_info = short_matches[0]
+            elif len(short_matches) > 1:
+                return self._ambiguous_symbol_response(file_path, symbol_name, short_matches)
+            else:
+                symbol_info = None
+                symbol_type = None
 
         if not symbol_info:
             return {
@@ -243,3 +234,48 @@ class CodeIntelligenceService(BaseService):
                 "symbol_name": symbol_name
             }
 
+    def _find_symbol_matches(self, summary: Dict[str, Any], symbol_name: str, exact_only: bool) -> List[tuple[str, Dict[str, Any]]]:
+        matches: List[tuple[str, Dict[str, Any]]] = []
+        seen_names = set()
+        symbol_groups = (
+            ("function", summary.get("functions", [])),
+            ("method", summary.get("methods", [])),
+            ("class", summary.get("classes", [])),
+        )
+
+        for symbol_type, items in symbol_groups:
+            for item in items:
+                name = item.get("name", "")
+                if not name or name in seen_names:
+                    continue
+                if exact_only:
+                    is_match = name == symbol_name
+                else:
+                    is_match = self._matches_short_symbol_name(name, symbol_name)
+                if is_match:
+                    seen_names.add(name)
+                    matches.append((symbol_type, item))
+
+        return matches
+
+    def _matches_short_symbol_name(self, candidate_name: str, symbol_name: str) -> bool:
+        if candidate_name == symbol_name:
+            return True
+        if candidate_name.endswith(f".{symbol_name}"):
+            return True
+        return candidate_name.rsplit("::", 1)[-1] == symbol_name
+
+    def _ambiguous_symbol_response(
+        self,
+        file_path: str,
+        symbol_name: str,
+        matches: List[tuple[str, Dict[str, Any]]],
+    ) -> Dict[str, Any]:
+        candidate_names = [item.get("name") for _, item in matches if item.get("name")]
+        return {
+            "status": "error",
+            "message": f"Symbol '{symbol_name}' is ambiguous in file; use a qualified name",
+            "file_path": file_path,
+            "symbol_name": symbol_name,
+            "candidates": candidate_names,
+        }

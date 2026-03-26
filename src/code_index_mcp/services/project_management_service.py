@@ -2,7 +2,7 @@
 Project Management Service - Business logic for project lifecycle management.
 
 This service handles the business logic for project initialization, configuration,
-and lifecycle management using the new JSON-based indexing system.
+and lifecycle management across the current indexing backends.
 """
 import logging
 from typing import Dict, Any, List
@@ -272,7 +272,7 @@ class ProjectManagementService(BaseService):
 
 
         try:
-            # Create rebuild callback that uses the JSON index manager
+            # Create rebuild callback that uses the deep index manager
             def rebuild_callback():
                 logger.info("File watcher triggered rebuild callback")
                 try:

@@ -383,7 +383,7 @@ class ProjectSettings:
                 if not os.access(self.settings_path, os.W_OK):
                     return
 
-                # Delete specific files only (config.json and index.json)
+                # Delete specific files only (config.json and the legacy index.json)
                 files_to_delete = [CONFIG_FILE, INDEX_FILE]
 
                 for filename in files_to_delete:

@@ -97,10 +97,10 @@ class ProjectConfigTool:
 
     def check_index_version(self) -> bool:
         """
-        Check if JSON index is the latest version.
+        Check whether the current deep index is present and loaded.
 
         Returns:
-            True if JSON index exists and is recent, False if needs rebuild
+            True if a deep index exists and is loaded, False if it needs rebuild
 
         Raises:
             RuntimeError: If settings not initialized
@@ -108,7 +108,7 @@ class ProjectConfigTool:
         if not self._settings:
             raise RuntimeError("Settings not initialized")
 
-        # Check if JSON index exists and is fresh
+        # Check if the deep index exists and is loaded
         from ...indexing import get_index_manager
         index_manager = get_index_manager()
         

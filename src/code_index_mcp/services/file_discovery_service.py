@@ -1,8 +1,8 @@
 """
 File Discovery Service - Business logic for intelligent file discovery.
 
-This service handles the business logic for finding files using the new
-JSON-based indexing system optimized for LLM consumption.
+This service handles the business logic for finding files using the shallow
+index optimized for fast file discovery.
 """
 
 from typing import Dict, Any, List, Optional
@@ -24,10 +24,10 @@ class FileDiscoveryResult:
 
 class FileDiscoveryService(BaseService):
     """
-    Business service for intelligent file discovery using JSON indexing.
+    Business service for intelligent file discovery using the shallow index.
 
-    This service provides fast file discovery using the optimized JSON
-    indexing system for efficient LLM-oriented responses.
+    This service provides fast file discovery using the optimized shallow
+    index for efficient LLM-oriented responses.
     """
 
     def __init__(self, ctx):
@@ -36,7 +36,7 @@ class FileDiscoveryService(BaseService):
 
     def find_files(self, pattern: str, max_results: Optional[int] = None) -> List[str]:
         """
-        Find files matching the given pattern using JSON indexing.
+        Find files matching the given pattern using the shallow index.
 
         Args:
             pattern: Glob pattern to search for (e.g., "*.py", "test_*.js")
@@ -51,7 +51,7 @@ class FileDiscoveryService(BaseService):
         # Business validation
         self._validate_discovery_request(pattern)
 
-        # Get files from JSON index
+        # Get files from the shallow index
         files = self._index_manager.find_files(pattern)
         
         # Apply max_results limit if specified

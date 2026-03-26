@@ -112,15 +112,15 @@ When sharing the manifests, remind consumers to supply `--project-path` (or to c
 ## Key Features
 
 ### 🔍 **Intelligent Search & Analysis**
-- **Dual-Strategy Architecture**: Specialized tree-sitter parsing for 7 core languages, fallback strategy for 50+ file types
+- **Dual-Strategy Architecture**: Specialized tree-sitter parsing for 10 core languages, fallback strategy for 50+ file types
 - **Direct Tree-sitter Integration**: No regex fallbacks for specialized languages - fail fast with clear errors
 - **Advanced Search**: Auto-detects and uses the best available tool (ugrep, ripgrep, ag, or grep)
 - **Universal File Support**: Comprehensive coverage from advanced AST parsing to basic file indexing
 - **File Analysis**: Deep insights into structure, imports, classes, methods, and complexity metrics after running `build_deep_index`
 
 ### 🗂️ **Multi-Language Support**  
-- **7 Languages with Tree-sitter AST Parsing**: Python, JavaScript, TypeScript, Java, Go, Objective-C, Zig
-- **50+ File Types with Fallback Strategy**: C/C++, Rust, Ruby, PHP, and all other programming languages
+- **10 Languages with Tree-sitter AST Parsing**: Python, JavaScript, TypeScript, Java, Kotlin, C#, Go, Objective-C, Zig, Rust
+- **50+ File Types with Fallback Strategy**: C/C++, Ruby, PHP, and all other programming languages
 - **Document & Config Files**: Markdown, JSON, YAML, XML with appropriate handling
 - **Web Frontend**: Vue, React, Svelte, HTML, CSS, SCSS
 - **Java Web & Build**: JSP/Tag files (`.jsp`, `.jspx`, `.jspf`, `.tag`, `.tagx`), Grails/GSP (`.gsp`), Gradle & Groovy builds (`.gradle`, `.groovy`), `.properties`, and Protocol Buffers (`.proto`)
@@ -151,14 +151,17 @@ When sharing the manifests, remind consumers to supply `--project-path` (or to c
 - **JavaScript** (`.js`, `.jsx`, `.mjs`, `.cjs`) - ES6+ class and function parsing with tree-sitter
 - **TypeScript** (`.ts`, `.tsx`) - Complete type-aware symbol extraction with interfaces
 - **Java** (`.java`) - Full class hierarchy, method signatures, and call relationships
+- **Kotlin** (`.kt`, `.kts`) - Package-aware symbol extraction with methods and call relationships
+- **C#** (`.cs`) - Namespace-aware type/member extraction with call relationships
 - **Go** (`.go`) - Struct methods, receiver types, and function analysis
+- **Rust** (`.rs`) - Functions, module-aware names, impl methods, structs/enums/traits, and basic call relationships
 - **Objective-C** (`.m`, `.mm`) - Class/instance method distinction with +/- notation
 - **Zig** (`.zig`, `.zon`) - Function and struct parsing with tree-sitter AST
 
 **All Other Programming Languages:**
 All other programming languages use the **FallbackParsingStrategy** which provides basic file indexing and metadata extraction. This includes:
-- **System & Low-Level:** C/C++ (`.c`, `.cpp`, `.h`, `.hpp`), Rust (`.rs`)
-- **Object-Oriented:** C# (`.cs`), Kotlin (`.kt`), Scala (`.scala`), Swift (`.swift`)
+- **System & Low-Level:** C/C++ (`.c`, `.cpp`, `.h`, `.hpp`)
+- **Object-Oriented:** Scala (`.scala`), Swift (`.swift`)
 - **Scripting & Dynamic:** Ruby (`.rb`), PHP (`.php`), Shell (`.sh`, `.bash`)
 - **And 40+ more file types** - All handled through the fallback strategy for basic indexing
 

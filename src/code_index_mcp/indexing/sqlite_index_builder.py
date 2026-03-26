@@ -235,7 +235,7 @@ class SQLiteIndexBuilder(JSONIndexBuilder):
         rows: List[Tuple[str, int, Optional[str], Optional[int], Optional[int], Optional[str], Optional[str], str, str]] = []
         for symbol_id, symbol_info in symbols.items():
             called_by = json.dumps(symbol_info.called_by or [])
-            short_name = symbol_id.split("::")[-1]
+            short_name = symbol_id.split("::", 1)[-1]
             rows.append(
                 (
                     symbol_id,
