@@ -18,6 +18,8 @@ from .models import FileInfo, SymbolInfo
 
 logger = logging.getLogger(__name__)
 
+PARALLEL_BUILD_TIMEOUT_SECONDS = 30
+
 
 class SQLiteIndexBuilder(JSONIndexBuilder):
     """
@@ -72,110 +74,140 @@ class SQLiteIndexBuilder(JSONIndexBuilder):
         results_iter: Iterable[Tuple[Dict[str, SymbolInfo], Dict[str, FileInfo], str, bool]]
 
         executor = None
+        timed_out = False
 
-        if parallel and total_files > 1:
-            if max_workers is None:
-                max_workers = min(os.cpu_count() or 4, total_files)
-            logger.info("Using ThreadPoolExecutor with %s workers", max_workers)
-            executor = ThreadPoolExecutor(max_workers=max_workers)
-            future_to_file = {
-                executor.submit(self._process_file, file_path, specialized_extensions): file_path
-                for file_path in files_to_process
-            }
+        try:
+            if parallel and total_files > 1:
+                if max_workers is None:
+                    max_workers = min(os.cpu_count() or 4, total_files)
+                logger.info("Using ThreadPoolExecutor with %s workers", max_workers)
+                executor = ThreadPoolExecutor(max_workers=max_workers)
+                future_to_file = {
+                    executor.submit(self._process_file, file_path, specialized_extensions): file_path
+                    for file_path in files_to_process
+                }
 
-            def _iter_results():
-                for future in as_completed(future_to_file):
-                    file_path = future_to_file[future]
+                def _iter_results():
+                    nonlocal timed_out
+
+                    completed_futures = set()
                     try:
-                        result = future.result(timeout=30)
+                        for future in as_completed(
+                            future_to_file,
+                            timeout=PARALLEL_BUILD_TIMEOUT_SECONDS,
+                        ):
+                            completed_futures.add(future)
+                            file_path = future_to_file[future]
+                            try:
+                                result = future.result()
+                                if result:
+                                    yield result
+                            except Exception as exc:
+                                logger.warning("Error processing file %s: %s (skipped)", file_path, exc)
+                    except FutureTimeoutError:
+                        timed_out = True
+                        cancelled_files = []
+                        running_files = []
+                        for future, file_path in future_to_file.items():
+                            if future in completed_futures:
+                                continue
+                            if future.cancel():
+                                cancelled_files.append(file_path)
+                            else:
+                                running_files.append(file_path)
+
+                        if cancelled_files:
+                            logger.warning(
+                                "Cancelled timed-out files: %s",
+                                ", ".join(sorted(cancelled_files)),
+                            )
+                        if running_files:
+                            logger.warning(
+                                "Still running after timeout and could not be cancelled: %s",
+                                ", ".join(sorted(running_files)),
+                            )
+
+                results_iter = _iter_results()
+            else:
+                logger.info("Using sequential processing")
+
+                def _iter_results_sequential():
+                    for file_path in files_to_process:
+                        result = self._process_file(file_path, specialized_extensions)
                         if result:
                             yield result
-                    except FutureTimeoutError:
-                        logger.warning("Timeout processing file: %s (skipped)", file_path)
-                    except Exception as exc:
-                        logger.warning("Error processing file %s: %s (skipped)", file_path, exc)
 
-            results_iter = _iter_results()
-        else:
-            logger.info("Using sequential processing")
+                results_iter = _iter_results_sequential()
 
-            def _iter_results_sequential():
-                for file_path in files_to_process:
-                    result = self._process_file(file_path, specialized_extensions)
-                    if result:
-                        yield result
+            languages = set()
+            specialized_count = 0
+            fallback_count = 0
+            pending_calls: List[Tuple[str, str]] = []
+            total_symbols = 0
+            symbol_types: Dict[str, int] = {}
+            processed_files = 0
 
-            results_iter = _iter_results_sequential()
+            self.store.initialize_schema()
+            with self.store.connect(for_build=True) as conn:
+                conn.execute("PRAGMA foreign_keys=ON")
+                self._reset_database(conn)
 
-        languages = set()
-        specialized_count = 0
-        fallback_count = 0
-        pending_calls: List[Tuple[str, str]] = []
-        total_symbols = 0
-        symbol_types: Dict[str, int] = {}
-        processed_files = 0
+                for symbols, file_info_dict, language, is_specialized in results_iter:
+                    file_path, file_info = next(iter(file_info_dict.items()))
+                    file_id = self._insert_file(conn, file_path, file_info)
+                    file_pending = getattr(file_info, "pending_calls", [])
+                    if file_pending:
+                        pending_calls.extend(file_pending)
+                    symbol_rows = self._prepare_symbol_rows(symbols, file_id)
 
-        self.store.initialize_schema()
-        with self.store.connect(for_build=True) as conn:
-            conn.execute("PRAGMA foreign_keys=ON")
-            self._reset_database(conn)
+                    if symbol_rows:
+                        conn.executemany(
+                            """
+                            INSERT INTO symbols(
+                                symbol_id,
+                                file_id,
+                                type,
+                                line,
+                                end_line,
+                                signature,
+                                docstring,
+                                called_by,
+                                short_name
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            """,
+                            symbol_rows,
+                        )
 
-            for symbols, file_info_dict, language, is_specialized in results_iter:
-                file_path, file_info = next(iter(file_info_dict.items()))
-                file_id = self._insert_file(conn, file_path, file_info)
-                file_pending = getattr(file_info, "pending_calls", [])
-                if file_pending:
-                    pending_calls.extend(file_pending)
-                symbol_rows = self._prepare_symbol_rows(symbols, file_id)
+                    languages.add(language)
+                    processed_files += 1
+                    total_symbols += len(symbol_rows)
 
-                if symbol_rows:
-                    conn.executemany(
-                        """
-                        INSERT INTO symbols(
-                            symbol_id,
-                            file_id,
-                            type,
-                            line,
-                            end_line,
-                            signature,
-                            docstring,
-                            called_by,
-                            short_name
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        """,
-                        symbol_rows,
-                    )
+                    if is_specialized:
+                        specialized_count += 1
+                    else:
+                        fallback_count += 1
 
-                languages.add(language)
-                processed_files += 1
-                total_symbols += len(symbol_rows)
+                    for _, _, symbol_type, _, _, _, _, _, _ in symbol_rows:
+                        key = symbol_type or "unknown"
+                        symbol_types[key] = symbol_types.get(key, 0) + 1
 
-                if is_specialized:
-                    specialized_count += 1
-                else:
-                    fallback_count += 1
-
-                for _, _, symbol_type, _, _, _, _, _, _ in symbol_rows:
-                    key = symbol_type or "unknown"
-                    symbol_types[key] = symbol_types.get(key, 0) + 1
-
-            self._persist_metadata(
-                conn,
-                processed_files,
-                total_symbols,
-                sorted(languages),
-                specialized_count,
-                fallback_count,
-                symbol_types,
-            )
-            self._resolve_pending_calls_sqlite(conn, pending_calls)
-            try:
-                conn.execute("PRAGMA optimize")
-            except Exception:  # pragma: no cover - best effort
-                pass
-
-        if executor:
-            executor.shutdown(wait=True)
+                self._persist_metadata(
+                    conn,
+                    processed_files,
+                    total_symbols,
+                    sorted(languages),
+                    specialized_count,
+                    fallback_count,
+                    symbol_types,
+                )
+                self._resolve_pending_calls_sqlite(conn, pending_calls)
+                try:
+                    conn.execute("PRAGMA optimize")
+                except Exception:  # pragma: no cover - best effort
+                    pass
+        finally:
+            if executor:
+                executor.shutdown(wait=not timed_out, cancel_futures=False)
 
         elapsed = time.time() - start_time
         logger.info(

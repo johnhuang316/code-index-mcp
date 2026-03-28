@@ -2,10 +2,15 @@
 """
 Test for Python symbol discovery including all symbol types.
 """
+import ast
+
 import pytest
 from textwrap import dedent
 
-from code_index_mcp.indexing.strategies.python_strategy import PythonParsingStrategy
+from code_index_mcp.indexing.strategies.python_strategy import (
+    PythonParsingStrategy,
+    SinglePassVisitor,
+)
 
 
 @pytest.fixture
@@ -151,12 +156,98 @@ def test_python_symbol_discovery(test_code_with_all_symbols):
     
     # Check signatures explicitly
     assert symbol_lookup['sync_function'].signature == "def sync_function():"
-    assert symbol_lookup['async_function'].signature == "def async_function():"
+    assert symbol_lookup['async_function'].signature == "async def async_function():"
     assert symbol_lookup['top_level_function'].signature == "def top_level_function(x, y):"
-    assert symbol_lookup['function_with_types'].signature == "def function_with_types(name, age, active):"
-    assert symbol_lookup['complex_function'].signature == "def complex_function(items, *args, **kwargs):"
-    assert symbol_lookup['TestClass.__init__'].signature == "def __init__(self, value):"
+    assert symbol_lookup['function_with_types'].signature == (
+        "def function_with_types(name: str, age: int, active: bool=True) -> dict:"
+    )
+    assert symbol_lookup['complex_function'].signature == (
+        "def complex_function(items: list[str], *args: int, callback=None, **kwargs: str)"
+        " -> tuple[int, str]:"
+    )
+    assert symbol_lookup['TestClass.__init__'].signature == "def __init__(self, value: int):"
     assert symbol_lookup['TestClass.sync_method'].signature == "def sync_method(self):"
-    assert symbol_lookup['TestClass.async_method'].signature == "def async_method(self):"
+    assert symbol_lookup['TestClass.async_method'].signature == "async def async_method(self):"
     assert symbol_lookup['TestClass.method'].signature == "def method(self):"
-    assert symbol_lookup['TestClass.typed_method'].signature == "def typed_method(self, x, y):"
+    assert symbol_lookup['TestClass.typed_method'].signature == (
+        "def typed_method(self, x: float, y: float) -> float:"
+    )
+
+
+def test_python_parse_failure_returns_empty_result_without_crashing():
+    strategy = PythonParsingStrategy()
+
+    symbols, file_info = strategy.parse_file("broken.py", "def broken(:\n")
+
+    assert symbols == {}
+    assert file_info.language == "python"
+    assert file_info.symbols == {"functions": [], "classes": []}
+    assert getattr(file_info, "pending_calls", []) == []
+
+
+def test_python_signature_preserves_async_and_kw_only_markers():
+    code = dedent(
+        """
+        async def afunc(a, /, b: int, *, c=True) -> int:
+            return b
+        """
+    )
+    strategy = PythonParsingStrategy()
+
+    symbols, _ = strategy.parse_file("sig.py", code)
+    signature = symbols["sig.py::afunc"].signature
+
+    assert signature == "async def afunc(a, /, b: int, *, c=True) -> int:"
+
+
+def test_python_signature_excludes_function_and_method_decorators():
+    code = dedent(
+        """
+        @outer.decorator(flag=True)
+        def decorated(value: str) -> str:
+            return value
+
+        class Example:
+            @classmethod
+            def build(cls, raw: str) -> "Example":
+                return cls()
+        """
+    )
+    strategy = PythonParsingStrategy()
+
+    symbols, _ = strategy.parse_file("decorated.py", code)
+
+    function_signature = symbols["decorated.py::decorated"].signature
+    method_signature = symbols["decorated.py::Example.build"].signature
+
+    assert function_signature == "def decorated(value: str) -> str:"
+    assert method_signature == "def build(cls, raw: str) -> 'Example':"
+    assert "@" not in function_signature
+    assert "@" not in method_signature
+
+
+def test_extract_function_signature_does_not_mutate_original_missing_locations():
+    visitor = SinglePassVisitor({}, [], [], [], "synthetic.py")
+    node = ast.FunctionDef(
+        name="synthetic",
+        args=ast.arguments(
+            posonlyargs=[],
+            args=[ast.arg(arg="value", annotation=ast.Name(id="int", ctx=ast.Load()))],
+            vararg=None,
+            kwonlyargs=[],
+            kw_defaults=[],
+            kwarg=None,
+            defaults=[],
+        ),
+        body=[ast.Return(value=ast.Name(id="value", ctx=ast.Load()))],
+        decorator_list=[ast.Name(id="decorator", ctx=ast.Load())],
+        returns=ast.Name(id="int", ctx=ast.Load()),
+        type_comment=None,
+    )
+
+    signature = visitor._extract_function_signature(node)
+
+    assert signature == "def synthetic(value: int) -> int:"
+    assert not hasattr(node.args.args[0].annotation, "lineno")
+    assert not hasattr(node.returns, "lineno")
+    assert len(node.decorator_list) == 1

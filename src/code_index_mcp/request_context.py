@@ -11,7 +11,7 @@ allowing each request to operate on its own project without interference.
 from __future__ import annotations
 
 import logging
-from contextvars import ContextVar
+from contextvars import ContextVar, Token
 from dataclasses import dataclass
 from typing import Optional
 
@@ -38,7 +38,7 @@ def get_request_project_path() -> Optional[str]:
     return _project_path_var.get()
 
 
-def set_request_project_path(path: Optional[str]) -> None:
+def set_request_project_path(path: Optional[str]) -> Token[Optional[str]]:
     """Set the current request's project path.
 
     Args:
@@ -46,12 +46,12 @@ def set_request_project_path(path: Optional[str]) -> None:
     """
     if path:
         logger.debug(f"[RequestContext] Setting project path: {path}")
-    _project_path_var.set(path)
+    return _project_path_var.set(path)
 
 
-def clear_request_project_path() -> None:
-    """Clear the current request's project path."""
-    _project_path_var.set(None)
+def reset_request_project_path(token: Token[Optional[str]]) -> None:
+    """Restore the current request's project path using a ContextVar token."""
+    _project_path_var.reset(token)
 
 
 class RequestContextManager:
@@ -65,13 +65,13 @@ class RequestContextManager:
 
     def __init__(self, project_path: Optional[str]):
         self.project_path = project_path
-        self._token = None
+        self._token: Optional[Token[Optional[str]]] = None
 
     def __enter__(self) -> 'RequestContextManager':
-        self._token = _project_path_var.set(self.project_path)
+        self._token = set_request_project_path(self.project_path)
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
         if self._token is not None:
-            _project_path_var.reset(self._token)
+            reset_request_project_path(self._token)
         return None

@@ -4,11 +4,14 @@ Python parsing strategy using AST - Optimized single-pass version.
 
 import ast
 import logging
-from typing import Dict, List, Tuple, Optional, Set
+from typing import Dict, List, Optional, Set, Tuple, TypeAlias
 from .base_strategy import ParsingStrategy
 from ..models import SymbolInfo, FileInfo
 
 logger = logging.getLogger(__name__)
+
+FunctionNode: TypeAlias = ast.FunctionDef | ast.AsyncFunctionDef
+MissingDefault = object()
 
 
 class PythonParsingStrategy(ParsingStrategy):
@@ -26,6 +29,7 @@ class PythonParsingStrategy(ParsingStrategy):
         functions = []
         classes = []
         imports = []
+        visitor: Optional[SinglePassVisitor] = None
         
         try:
             tree = ast.parse(content)
@@ -44,7 +48,7 @@ class PythonParsingStrategy(ParsingStrategy):
             imports=imports
         )
 
-        pending_calls = visitor.resolve_deferred_calls()
+        pending_calls = visitor.resolve_deferred_calls() if visitor else []
         if pending_calls:
             file_info.pending_calls = pending_calls
         
@@ -55,7 +59,7 @@ class SinglePassVisitor(ast.NodeVisitor):
     """Single-pass AST visitor that extracts symbols and analyzes calls in one traversal."""
     
     def __init__(self, symbols: Dict[str, SymbolInfo], functions: List[str], 
-                 classes: List[str], imports: List[str], file_path: str):
+                 classes: List[str], imports: List[str], file_path: str) -> None:
         self.symbols = symbols
         self.functions = functions
         self.classes = classes
@@ -63,19 +67,19 @@ class SinglePassVisitor(ast.NodeVisitor):
         self.file_path = file_path
         
         # Context tracking for call analysis
-        self.current_function_stack = []
-        self.current_class = None
+        self.current_function_stack: List[str] = []
+        self.current_class: Optional[str] = None
         self.variable_type_stack: List[Dict[str, str]] = [{}]
         
         # Symbol lookup index for O(1) access
-        self.symbol_lookup = {}  # name -> symbol_id mapping for fast lookups
+        self.symbol_lookup: Dict[str, str] = {}  # name -> symbol_id mapping for fast lookups
         
         # Track processed nodes to avoid duplicates
         self.processed_nodes: Set[int] = set()
         # Deferred call relationships for forward references
         self.deferred_calls: List[Tuple[str, str]] = []
     
-    def visit_ClassDef(self, node: ast.ClassDef):
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
         """Visit class definition - extract symbol and analyze in single pass."""
         class_name = node.name
         symbol_id = self._create_symbol_id(self.file_path, class_name)
@@ -117,15 +121,15 @@ class SinglePassVisitor(ast.NodeVisitor):
         # Restore previous class context
         self.current_class = old_class
     
-    def visit_FunctionDef(self, node: ast.FunctionDef):
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
         """Visit function definition - extract symbol and track context."""
         self._process_function(node)
     
-    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef):
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
         """Visit async function definition - extract symbol and track context."""
         self._process_function(node)
     
-    def _process_function(self, node):
+    def _process_function(self, node: FunctionNode) -> None:
         """Process both sync and async function definitions."""
         # Skip if this is a method (already handled by ClassDef)
         if self.current_class:
@@ -171,7 +175,7 @@ class SinglePassVisitor(ast.NodeVisitor):
         self.current_function_stack.pop()
         self.variable_type_stack.pop()
     
-    def visit_Assign(self, node: ast.Assign):
+    def visit_Assign(self, node: ast.Assign) -> None:
         """Track simple variable assignments to class instances."""
         class_name = self._infer_class_name(node.value)
         if class_name:
@@ -181,7 +185,7 @@ class SinglePassVisitor(ast.NodeVisitor):
                     current_scope[target.id] = class_name
         self.generic_visit(node)
 
-    def visit_AnnAssign(self, node: ast.AnnAssign):
+    def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
         """Track annotated assignments that instantiate classes."""
         class_name = self._infer_class_name(node.value)
         if class_name and isinstance(node.target, ast.Name):
@@ -200,7 +204,7 @@ class SinglePassVisitor(ast.NodeVisitor):
                 return func.attr
         return None
     
-    def _register_method(self, node: ast.FunctionDef, class_name: str):
+    def _register_method(self, node: FunctionNode, class_name: str) -> None:
         """Register a method symbol without visiting its body."""
         method_name = f"{class_name}.{node.name}"
         method_symbol_id = self._create_symbol_id(self.file_path, method_name)
@@ -222,7 +226,7 @@ class SinglePassVisitor(ast.NodeVisitor):
         self.symbol_lookup[node.name] = method_symbol_id  # Also index by short method name
         self.functions.append(method_name)
 
-    def _visit_registered_method(self, node: ast.FunctionDef, class_name: str):
+    def _visit_registered_method(self, node: FunctionNode, class_name: str) -> None:
         """Visit a previously registered method body for call analysis."""
         method_name = f"{class_name}.{node.name}"
         function_id = f"{self.file_path}::{method_name}"
@@ -233,20 +237,20 @@ class SinglePassVisitor(ast.NodeVisitor):
         self.current_function_stack.pop()
         self.variable_type_stack.pop()
     
-    def visit_Import(self, node: ast.Import):
+    def visit_Import(self, node: ast.Import) -> None:
         """Handle import statements."""
         for alias in node.names:
             self.imports.append(alias.name)
         self.generic_visit(node)
     
-    def visit_ImportFrom(self, node: ast.ImportFrom):
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
         """Handle from...import statements."""
         if node.module:
             for alias in node.names:
                 self.imports.append(f"{node.module}.{alias.name}")
         self.generic_visit(node)
     
-    def visit_Call(self, node: ast.Call):
+    def visit_Call(self, node: ast.Call) -> None:
         """Visit function call and record relationship using O(1) lookup."""
         if not self.current_function_stack:
             self.generic_visit(node)
@@ -349,22 +353,57 @@ class SinglePassVisitor(ast.NodeVisitor):
         """Create a unique symbol ID."""
         return f"{file_path}::{symbol_name}"
     
-    def _extract_function_signature(self, node: ast.FunctionDef) -> str:
+    def _extract_function_signature(self, node: FunctionNode) -> str:
         """Extract function signature from AST node."""
-        # Build basic signature
-        args = []
-        
-        # Regular arguments
-        for arg in node.args.args:
-            args.append(arg.arg)
-        
-        # Varargs (*args)
-        if node.args.vararg:
-            args.append(f"*{node.args.vararg.arg}")
-        
-        # Keyword arguments (**kwargs)
-        if node.args.kwarg:
-            args.append(f"**{node.args.kwarg.arg}")
-        
-        signature = f"def {node.name}({', '.join(args)}):"
-        return signature
+        try:
+            prefix = "async def" if isinstance(node, ast.AsyncFunctionDef) else "def"
+            arguments = self._format_function_arguments(node.args)
+            returns = f" -> {ast.unparse(node.returns)}" if node.returns else ""
+            return f"{prefix} {node.name}({arguments}){returns}:"
+        except Exception:
+            prefix = "async def" if isinstance(node, ast.AsyncFunctionDef) else "def"
+            return f"{prefix} {node.name}(...):"
+
+    def _format_function_arguments(self, arguments: ast.arguments) -> str:
+        """Build a signature-style argument list without mutating AST nodes."""
+        parts: List[str] = []
+        positional_args = [*arguments.posonlyargs, *arguments.args]
+        positional_defaults: List[object] = [MissingDefault] * (
+            len(positional_args) - len(arguments.defaults)
+        ) + list(arguments.defaults)
+
+        for index, arg in enumerate(arguments.posonlyargs):
+            parts.append(self._format_argument(arg, positional_defaults[index]))
+        if arguments.posonlyargs:
+            parts.append("/")
+
+        for index, arg in enumerate(arguments.args, start=len(arguments.posonlyargs)):
+            parts.append(self._format_argument(arg, positional_defaults[index]))
+
+        if arguments.vararg:
+            parts.append(self._format_argument(arguments.vararg, prefix="*"))
+        elif arguments.kwonlyargs:
+            parts.append("*")
+
+        for arg, default in zip(arguments.kwonlyargs, arguments.kw_defaults):
+            kw_default = default if default is not None else MissingDefault
+            parts.append(self._format_argument(arg, kw_default))
+
+        if arguments.kwarg:
+            parts.append(self._format_argument(arguments.kwarg, prefix="**"))
+
+        return ", ".join(parts)
+
+    def _format_argument(
+        self,
+        arg: ast.arg,
+        default: object = MissingDefault,
+        prefix: str = "",
+    ) -> str:
+        """Format a single argument with optional annotation/default."""
+        formatted = f"{prefix}{arg.arg}"
+        if arg.annotation:
+            formatted = f"{formatted}: {ast.unparse(arg.annotation)}"
+        if default is not MissingDefault:
+            formatted = f"{formatted}={ast.unparse(default)}"
+        return formatted

@@ -12,7 +12,7 @@ import os
 import platform
 import select
 import traceback
-from threading import Timer
+from threading import Condition, Lock, Timer
 from typing import Optional, Callable, List, Type
 from pathlib import Path
 
@@ -28,13 +28,14 @@ def _get_observer_class(observer_type: str = "auto") -> Type:
 
     On macOS, the default FSEventsObserver has known reliability issues including
     thread safety problems, deadlocks, and "SystemError: Cannot start fsevents
-    stream" errors. This function defaults to KqueueObserver on macOS for stability.
+    stream" errors. Use explicit ``kqueue`` mode when you want to avoid the
+    platform default observer there.
 
     See: https://github.com/gorakhargosh/watchdog/issues/765
 
     Args:
         observer_type: One of "auto", "kqueue", "fsevents", "polling"
-            - "auto": kqueue on macOS, platform default elsewhere (recommended)
+            - "auto": platform default observer
             - "kqueue": Force kqueue observer (macOS/BSD)
             - "fsevents": Force FSEvents observer (macOS only, has known issues)
             - "polling": Cross-platform polling fallback (slower but most compatible)
@@ -167,12 +168,7 @@ class FileWatcherService(BaseService):
             ObserverClass = _get_observer_class(observer_type)
             self.observer = ObserverClass()
             self.logger.info("Using %s observer (type=%s)", ObserverClass.__name__, observer_type)
-            self.event_handler = DebounceEventHandler(
-                debounce_seconds=debounce_seconds,
-                rebuild_callback=self.rebuild_callback,
-                base_path=Path(self.base_path),
-                logger=self.logger
-            )
+            self.event_handler = self._create_event_handler(debounce_seconds)
 
             # Log detailed Observer setup
             watch_path = str(self.base_path)
@@ -247,10 +243,10 @@ class FileWatcherService(BaseService):
                 self.logger.debug("Stopping observer...")
                 self.observer.stop()
 
-                # Step 2: Cancel any active debounce timer
-                if self.event_handler and self.event_handler.debounce_timer:
-                    self.logger.debug("Cancelling debounce timer...")
-                    self.event_handler.debounce_timer.cancel()
+                # Step 2: Invalidate any active debounce timer/callback generation
+                if self.event_handler:
+                    self.logger.debug("Stopping debounce handler...")
+                    self.event_handler.stop()
 
                 # Step 3: Wait for observer thread to finish (with timeout)
                 self.logger.debug("Waiting for observer thread to finish...")
@@ -306,6 +302,10 @@ class FileWatcherService(BaseService):
         self.restart_attempts += 1
 
         # Stop current observer if running
+        old_handler = self.event_handler
+        if old_handler:
+            old_handler.stop()
+
         if self.observer:
             try:
                 self.observer.stop()
@@ -317,8 +317,10 @@ class FileWatcherService(BaseService):
         try:
             config = self.settings.get_file_watcher_config()
             observer_type = config.get('observer_type', 'auto')
+            debounce_seconds = config.get('debounce_seconds', 6.0)
             ObserverClass = _get_observer_class(observer_type)
             self.observer = ObserverClass()
+            self.event_handler = self._create_event_handler(debounce_seconds)
             self.observer.schedule(
                 self.event_handler,
                 str(self.base_path),
@@ -333,6 +335,15 @@ class FileWatcherService(BaseService):
         except Exception as e:
             self.logger.error("Failed to restart file watcher: %s", e)
             return False
+
+    def _create_event_handler(self, debounce_seconds: float) -> "DebounceEventHandler":
+        """Create a fresh debounce handler for the current watcher configuration."""
+        return DebounceEventHandler(
+            debounce_seconds=debounce_seconds,
+            rebuild_callback=self.rebuild_callback,
+            base_path=Path(self.base_path),
+            logger=self.logger,
+        )
 
     def get_status(self) -> dict:
         """
@@ -393,6 +404,11 @@ class DebounceEventHandler(FileSystemEventHandler):
         self.base_path = base_path
         self.debounce_timer: Optional[Timer] = None
         self.logger = logger
+        self._lock = Lock()
+        self._state_changed = Condition(self._lock)
+        self._generation = 0
+        self._stopped = False
+        self._inflight_callbacks = 0
 
         # Use centralized file filtering
         self.file_filter = FileFilter(additional_excludes)
@@ -457,25 +473,63 @@ class DebounceEventHandler(FileSystemEventHandler):
 
     def reset_debounce_timer(self) -> None:
         """Reset the debounce timer, canceling any existing timer."""
-        if self.debounce_timer:
-            self.debounce_timer.cancel()
+        with self._lock:
+            if self._stopped:
+                return
 
-        self.debounce_timer = Timer(
-            self.debounce_seconds,
-            self.trigger_rebuild
-        )
-        self.debounce_timer.start()
+            self._generation += 1
+            generation = self._generation
 
-    def trigger_rebuild(self) -> None:
+            if self.debounce_timer:
+                self.debounce_timer.cancel()
+
+            timer = Timer(
+                self.debounce_seconds,
+                self.trigger_rebuild,
+                args=(generation,),
+            )
+            self.debounce_timer = timer
+
+        timer.start()
+
+    def stop(self) -> None:
+        """Invalidate pending timers and suppress future rebuilds."""
+        with self._lock:
+            self._stopped = True
+            self._generation += 1
+            timer = self.debounce_timer
+            self.debounce_timer = None
+
+            while self._inflight_callbacks > 0:
+                self._state_changed.wait()
+
+        if timer:
+            timer.cancel()
+
+    def trigger_rebuild(self, generation: Optional[int] = None) -> None:
         """Trigger index rebuild after debounce period."""
+        with self._lock:
+            if self._stopped:
+                return
+            if generation is not None and generation != self._generation:
+                return
+
+            callback = self.rebuild_callback
+            self.debounce_timer = None
+            self._inflight_callbacks += 1
+
         self.logger.info("File changes detected, triggering rebuild")
 
-        if self.rebuild_callback:
-            try:
-                result = self.rebuild_callback()
-            except Exception as e:
+        try:
+            if callback:
+                callback()
+            else:
+                self.logger.warning("No rebuild callback configured")
+        except Exception as e:
                 self.logger.error("Rebuild callback failed: %s", e)
                 traceback_msg = traceback.format_exc()
                 self.logger.error("Traceback: %s", traceback_msg)
-        else:
-            self.logger.warning("No rebuild callback configured")
+        finally:
+            with self._lock:
+                self._inflight_callbacks -= 1
+                self._state_changed.notify_all()

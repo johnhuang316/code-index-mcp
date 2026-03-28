@@ -10,6 +10,7 @@ from typing import Optional
 from mcp.server.fastmcp import Context
 
 from ..project_settings import ProjectSettings
+from ..request_context import get_request_project_path
 
 
 class ContextHelper:
@@ -37,6 +38,10 @@ class ContextHelper:
         Returns:
             The base project path, or empty string if not set
         """
+        request_project_path = get_request_project_path()
+        if request_project_path:
+            return request_project_path
+
         try:
             return self.ctx.request_context.lifespan_context.base_path
         except AttributeError:

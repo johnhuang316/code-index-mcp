@@ -1,8 +1,4 @@
-"""Tests for file watcher observer selection.
-
-Verify that the observer factory correctly selects the appropriate
-observer class based on platform and configuration.
-"""
+"""Tests for file watcher observer selection and docs."""
 
 import platform
 import select
@@ -10,6 +6,7 @@ import pytest
 from unittest.mock import patch
 
 from code_index_mcp.services.file_watcher_service import _get_observer_class
+from code_index_mcp.server import configure_file_watcher
 
 
 def test_auto_uses_platform_default():
@@ -20,6 +17,15 @@ def test_auto_uses_platform_default():
     assert ObserverClass is not None
     # Should NOT be kqueue (that's opt-in now)
     assert 'Kqueue' not in ObserverClass.__name__
+
+
+def test_auto_docstring_matches_platform_default_contract():
+    """Verify auto mode docs describe the platform default contract."""
+    observer_doc = _get_observer_class.__doc__ or ""
+    tool_doc = configure_file_watcher.__doc__ or ""
+
+    assert '"auto": platform default observer' in observer_doc
+    assert '"auto" (default): platform default observer' in tool_doc
 
 
 def test_auto_uses_default_on_linux():

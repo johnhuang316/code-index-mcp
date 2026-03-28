@@ -443,7 +443,7 @@ def configure_file_watcher(
         debounce_seconds: Debounce time in seconds before triggering rebuild
         additional_exclude_patterns: Additional directory/file patterns to exclude
         observer_type: Observer backend to use. Options:
-            - "auto" (default): kqueue on macOS for reliability, platform default elsewhere
+            - "auto" (default): platform default observer
             - "kqueue": Force kqueue observer (macOS/BSD)
             - "fsevents": Force FSEvents observer (macOS only, has known reliability issues)
             - "polling": Cross-platform polling fallback (slower but most compatible)
