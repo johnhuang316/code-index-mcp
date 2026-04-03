@@ -252,13 +252,20 @@ class ProjectSettings:
                 try:
                     with open(config_path, encoding="utf-8") as f:
                         config = json.load(f)
-                    return config
                 except (json.JSONDecodeError, UnicodeDecodeError):
                     # If file is corrupted, return empty dict
                     return {}
             else:
-                pass
-            return {}
+                return {}
+
+            # One-time migration: move additional_exclude_patterns to project level
+            fw = config.get("file_watcher", {})
+            old_patterns = fw.pop("additional_exclude_patterns", None)
+            if old_patterns and "additional_exclude_patterns" not in config:
+                config["additional_exclude_patterns"] = old_patterns
+                self.save_config(config)
+
+            return config
         except Exception:
             return {}
 
@@ -511,29 +518,8 @@ class ProjectSettings:
         default_config = {
             "enabled": True,
             "debounce_seconds": 6.0,
-            "additional_exclude_patterns": [],
             "monitored_extensions": [],  # Empty = use all supported extensions
-            "exclude_patterns": [
-                ".git",
-                ".svn",
-                ".hg",
-                "node_modules",
-                "__pycache__",
-                ".venv",
-                "venv",
-                ".DS_Store",
-                "Thumbs.db",
-                "dist",
-                "build",
-                "target",
-                ".idea",
-                ".vscode",
-                ".pytest_cache",
-                ".coverage",
-                ".tox",
-                "bin",
-                "obj",
-            ],
+            "observer_type": "auto",
         }
 
         # Merge with loaded config
@@ -556,4 +542,14 @@ class ProjectSettings:
             config["file_watcher"] = self.get_file_watcher_config()
 
         config["file_watcher"].update(updates)
+        self.save_config(config)
+
+    def update_exclude_patterns(self, patterns: list) -> None:
+        """Update project-level exclude patterns.
+
+        Args:
+            patterns: List of glob patterns to exclude
+        """
+        config = self.load_config()
+        config["additional_exclude_patterns"] = patterns
         self.save_config(config)

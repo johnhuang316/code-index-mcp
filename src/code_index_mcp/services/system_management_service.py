@@ -359,22 +359,25 @@ class SystemManagementService(BaseService):
 
         settings = self.ctx.request_context.lifespan_context.settings
 
-        # Build updates dictionary
+        # Build updates dictionary (watcher-specific settings only)
         updates = {}
         if enabled is not None:
             updates["enabled"] = enabled
         if debounce_seconds is not None:
             updates["debounce_seconds"] = debounce_seconds
-        if additional_exclude_patterns is not None:
-            updates["additional_exclude_patterns"] = additional_exclude_patterns
         if observer_type is not None:
             updates["observer_type"] = observer_type
 
-        if not updates:
+        # additional_exclude_patterns is saved at project level, not file_watcher
+        if additional_exclude_patterns is not None:
+            settings.update_exclude_patterns(additional_exclude_patterns)
+
+        if not updates and additional_exclude_patterns is None:
             return "No configuration changes specified"
 
-        # Apply configuration
-        settings.update_file_watcher_config(updates)
+        # Apply watcher-specific configuration
+        if updates:
+            settings.update_file_watcher_config(updates)
 
         # Business logic: Generate informative result message
         changes_summary = []
@@ -382,8 +385,8 @@ class SystemManagementService(BaseService):
             changes_summary.append(f"enabled={updates['enabled']}")
         if 'debounce_seconds' in updates:
             changes_summary.append(f"debounce={updates['debounce_seconds']}s")
-        if 'additional_exclude_patterns' in updates:
-            pattern_count = len(updates['additional_exclude_patterns'])
+        if additional_exclude_patterns is not None:
+            pattern_count = len(additional_exclude_patterns)
             changes_summary.append(f"exclude_patterns={pattern_count}")
         if 'observer_type' in updates:
             changes_summary.append(f"observer_type={updates['observer_type']}")
