@@ -10,12 +10,10 @@ import shutil
 import subprocess
 import sys
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
+from typing import Any, Dict, List, Optional, Tuple
 
 from ..indexing.qualified_names import normalize_file_path
 
-if TYPE_CHECKING:  # pragma: no cover
-    from ..utils.file_filter import FileFilter
 
 def parse_search_output(
     output: str,
