@@ -19,6 +19,21 @@ class UgrepStrategy(SearchStrategy):
         """Check if 'ug' command is available on the system."""
         return shutil.which('ug') is not None
 
+    def build_exclude_args(self, exclude_patterns: list) -> list:
+        """
+        Translate a list of exclude patterns into ugrep CLI arguments.
+
+        Patterns ending with '/' are treated as directory excludes
+        (--exclude-dir); all others are file excludes (--exclude).
+        """
+        args = []
+        for p in exclude_patterns:
+            if p.endswith('/'):
+                args.append(f'--exclude-dir={p.rstrip("/")}')
+            else:
+                args.append(f'--exclude={p}')
+        return args
+
     def search(
         self,
         pattern: str,
@@ -27,11 +42,12 @@ class UgrepStrategy(SearchStrategy):
         context_lines: int = 0,
         file_pattern: Optional[str] = None,
         fuzzy: bool = False,
-        regex: bool = False
+        regex: bool = False,
+        exclude_patterns: list = None
     ) -> Dict[str, List[Tuple[int, str]]]:
         """
         Execute a search using the 'ug' command-line tool.
-        
+
         Args:
             pattern: The search pattern
             base_path: Directory to search in
@@ -40,11 +56,12 @@ class UgrepStrategy(SearchStrategy):
             file_pattern: File pattern to filter
             fuzzy: Enable true fuzzy search (ugrep native support)
             regex: Enable regex pattern matching
+            exclude_patterns: Optional list of glob patterns to exclude
         """
         if not self.is_available():
             return {"error": "ugrep (ug) command not found."}
 
-        cmd = ['ug', '-r', '--line-number', '--no-heading']
+        cmd = ['ug', '-r', '--line-number', '--no-heading', '--ignore-files']
 
         if fuzzy:
             # ugrep has native fuzzy search support
@@ -55,36 +72,15 @@ class UgrepStrategy(SearchStrategy):
 
         if not case_sensitive:
             cmd.append('--ignore-case')
-        
+
         if context_lines > 0:
             cmd.extend(['-A', str(context_lines), '-B', str(context_lines)])
-            
+
         if file_pattern:
             cmd.extend(['--include', file_pattern])
 
-        processed_patterns = set()
-        exclude_dirs = getattr(self, 'exclude_dirs', [])
-        exclude_file_patterns = getattr(self, 'exclude_file_patterns', [])
-
-        for directory in exclude_dirs:
-            normalized = directory.strip()
-            if not normalized or normalized in processed_patterns:
-                continue
-            cmd.extend(['--ignore', f'**/{normalized}/**'])
-            processed_patterns.add(normalized)
-
-        for pattern in exclude_file_patterns:
-            normalized = pattern.strip()
-            if not normalized or normalized in processed_patterns:
-                continue
-            if normalized.startswith('!'):
-                ignore_pattern = normalized[1:]
-            elif any(ch in normalized for ch in '*?[') or '/' in normalized:
-                ignore_pattern = normalized
-            else:
-                ignore_pattern = f'**/{normalized}'
-            cmd.extend(['--ignore', ignore_pattern])
-            processed_patterns.add(normalized)
+        if exclude_patterns:
+            cmd.extend(self.build_exclude_args(exclude_patterns))
 
         # Add '--' to treat pattern as a literal argument, preventing injection
         cmd.append('--')

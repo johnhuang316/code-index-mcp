@@ -88,3 +88,38 @@ def test_strategy_build_exclude_args_returns_list():
     args = strategy.build_exclude_args(["logs/", "*.generated.ts"])
     assert isinstance(args, list)
     # Base class returns empty list, subclasses will override
+
+
+@patch("code_index_mcp.search.ugrep.shutil.which", return_value="/usr/bin/ug")
+@patch("code_index_mcp.search.ugrep.subprocess.run")
+def test_ugrep_uses_ignore_files_flag(mock_run, mock_which, tmp_path):
+    """ugrep should use --ignore-files for .gitignore support."""
+    mock_run.return_value = SimpleNamespace(returncode=0, stdout="", stderr="")
+    from code_index_mcp.search.ugrep import UgrepStrategy
+    strategy = UgrepStrategy()
+    strategy.search("mongo", str(tmp_path))
+    cmd = mock_run.call_args[0][0]
+    assert '--ignore-files' in cmd
+    assert '--ignore' not in cmd
+
+
+@patch("code_index_mcp.search.ugrep.shutil.which", return_value="/usr/bin/ug")
+@patch("code_index_mcp.search.ugrep.subprocess.run")
+def test_ugrep_search_pattern_not_shadowed(mock_run, mock_which, tmp_path):
+    """ugrep must use the actual search pattern, not an exclude pattern."""
+    mock_run.return_value = SimpleNamespace(returncode=0, stdout="", stderr="")
+    from code_index_mcp.search.ugrep import UgrepStrategy
+    strategy = UgrepStrategy()
+    strategy.search("myFunction", str(tmp_path))
+    cmd = mock_run.call_args[0][0]
+    assert cmd[-2] == "myFunction"
+
+
+@patch("code_index_mcp.search.ugrep.subprocess.run")
+def test_ugrep_build_exclude_args(mock_run, tmp_path):
+    """ugrep should translate exclude patterns to --exclude-dir and --exclude."""
+    from code_index_mcp.search.ugrep import UgrepStrategy
+    strategy = UgrepStrategy()
+    args = strategy.build_exclude_args(["logs/", "*.tmp"])
+    assert '--exclude-dir=logs' in args
+    assert '--exclude=*.tmp' in args
