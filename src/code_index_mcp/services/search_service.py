@@ -5,11 +5,10 @@ This service handles code search operations, search tool management,
 and search strategy selection.
 """
 
-from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from .base_service import BaseService
-from ..utils import FileFilter, ResponseFormatter, ValidationHelper
+from ..utils import ResponseFormatter, ValidationHelper
 
 
 class SearchService(BaseService):
@@ -17,7 +16,7 @@ class SearchService(BaseService):
 
     def __init__(self, ctx):
         super().__init__(ctx)
-        self.file_filter = self._create_file_filter()
+        self.additional_exclude_patterns = self._load_exclude_patterns()
 
     def search_code(  # pylint: disable=too-many-arguments, too-many-locals
         self,
@@ -62,8 +61,6 @@ class SearchService(BaseService):
                 "basic search only supports literal and fuzzy matching"
             )
 
-        self._configure_strategy(strategy)
-
         try:
             results = strategy.search(
                 pattern=pattern,
@@ -72,11 +69,11 @@ class SearchService(BaseService):
                 context_lines=context_lines,
                 file_pattern=file_pattern,
                 fuzzy=fuzzy,
-                regex=regex
+                regex=regex,
+                exclude_patterns=self.additional_exclude_patterns
             )
-            filtered = self._filter_results(results)
             formatted_results, pagination = self._paginate_results(
-                filtered,
+                results,
                 start_index=start_index,
                 max_results=max_results
             )
@@ -120,75 +117,19 @@ class SearchService(BaseService):
 
         return capabilities
 
-    def _configure_strategy(self, strategy) -> None:
-        """Apply shared exclusion configuration to the strategy if supported."""
-        configure = getattr(strategy, 'configure_excludes', None)
-        if not configure:
-            return
-
+    def _load_exclude_patterns(self) -> list:
+        """Load user-configured exclude patterns from project settings."""
         try:
-            configure(self.file_filter)
-        except Exception:  # pragma: no cover - defensive fallback
-            pass
-
-    def _create_file_filter(self) -> FileFilter:
-        """Build a shared file filter drawing from project settings."""
-        additional_dirs: List[str] = []
-        additional_file_patterns: List[str] = []
-
-        settings = self.settings
-        if settings:
-            try:
-                config = settings.get_file_watcher_config()
-            except Exception:  # pragma: no cover - fallback if config fails
-                config = {}
-
-            for key in ('exclude_patterns', 'additional_exclude_patterns'):
-                patterns = config.get(key) or []
-                for pattern in patterns:
-                    if not isinstance(pattern, str):
-                        continue
-                    normalized = pattern.strip()
-                    if not normalized:
-                        continue
-                    additional_dirs.append(normalized)
-                    additional_file_patterns.append(normalized)
-
-        file_filter = FileFilter(additional_dirs or None)
-
-        if additional_file_patterns:
-            file_filter.exclude_files.update(additional_file_patterns)
-
-        return file_filter
-
-    def _filter_results(self, results: Dict[str, Any]) -> Dict[str, Any]:
-        """Filter out matches that reside under excluded paths."""
-        if not isinstance(results, dict) or not results:
-            return results
-
-        if 'error' in results or not self.file_filter or not self.base_path:
-            return results
-
-        base_path = Path(self.base_path)
-        filtered: Dict[str, Any] = {}
-
-        for rel_path, matches in results.items():
-            if not isinstance(rel_path, str):
-                continue
-
-            normalized = Path(rel_path.replace('\\', '/'))
-            try:
-                absolute = (base_path / normalized).resolve()
-            except Exception:  # pragma: no cover - invalid path safety
-                continue
-
-            try:
-                if self.file_filter.should_process_path(absolute, base_path):
-                    filtered[rel_path] = matches
-            except Exception:  # pragma: no cover - defensive fallback
-                continue
-
-        return filtered
+            config = self.settings.load_config()
+            # New location (project-level)
+            patterns = config.get("additional_exclude_patterns", [])
+            # Backward compat: check old location
+            if not patterns:
+                fw_config = config.get("file_watcher", {})
+                patterns = fw_config.get("additional_exclude_patterns", [])
+            return patterns if isinstance(patterns, list) else []
+        except Exception:
+            return []
 
     def _paginate_results(
         self,
