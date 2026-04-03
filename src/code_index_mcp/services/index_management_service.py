@@ -2,7 +2,7 @@
 Index Management Service - Business logic for index lifecycle management.
 
 This service handles the business logic for index rebuilding, status monitoring,
-and index-related operations using the new JSON-based indexing system.
+and index-related operations across the current shallow and deep index backends.
 """
 import time
 import logging
@@ -31,13 +31,12 @@ class IndexManagementService(BaseService):
     """
     Business service for index lifecycle management.
 
-    This service orchestrates index management workflows using the new
-    JSON-based indexing system for optimal LLM performance.
+    This service orchestrates shallow and deep index management workflows.
     """
 
     def __init__(self, ctx):
         super().__init__(ctx)
-        # Deep manager (symbols/files, legacy JSON index manager)
+        # Deep manager (SQLite-backed symbols/files)
         self._index_manager = get_index_manager()
         # Shallow manager (file-list only) for default workflows
         self._shallow_manager = get_shallow_index_manager()
