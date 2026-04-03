@@ -19,6 +19,13 @@ class AgStrategy(SearchStrategy):
         """Check if 'ag' command is available on the system."""
         return shutil.which('ag') is not None
 
+    def build_exclude_args(self, exclude_patterns: list) -> list:
+        """Build ag --ignore args from a list of exclude patterns."""
+        args = []
+        for p in exclude_patterns:
+            args.extend(['--ignore', p.rstrip('/')])
+        return args
+
     def search(
         self,
         pattern: str,
@@ -27,7 +34,8 @@ class AgStrategy(SearchStrategy):
         context_lines: int = 0,
         file_pattern: Optional[str] = None,
         fuzzy: bool = False,
-        regex: bool = False
+        regex: bool = False,
+        exclude_patterns: Optional[List[str]] = None
     ) -> Dict[str, List[Tuple[int, str]]]:
         """
         Execute a search using The Silver Searcher (ag).
@@ -49,11 +57,9 @@ class AgStrategy(SearchStrategy):
             cmd.append('--ignore-case')
 
         # Prepare search pattern
-        search_pattern = pattern
-        
         if fuzzy:
             # Use word boundary pattern for partial matching
-            search_pattern = create_word_boundary_pattern(pattern)
+            pattern = create_word_boundary_pattern(pattern)
         elif not regex:
             # Use literal string search
             cmd.append('--literal')
@@ -88,29 +94,12 @@ class AgStrategy(SearchStrategy):
             
             cmd.extend(['-G', regex_pattern])
 
-        processed_patterns = set()
-        exclude_dirs = getattr(self, 'exclude_dirs', [])
-        exclude_file_patterns = getattr(self, 'exclude_file_patterns', [])
-
-        for directory in exclude_dirs:
-            normalized = directory.strip()
-            if not normalized or normalized in processed_patterns:
-                continue
-            cmd.extend(['--ignore', normalized])
-            processed_patterns.add(normalized)
-
-        for pattern in exclude_file_patterns:
-            normalized = pattern.strip()
-            if not normalized or normalized in processed_patterns:
-                continue
-            if normalized.startswith('!'):
-                normalized = normalized[1:]
-            cmd.extend(['--ignore', normalized])
-            processed_patterns.add(normalized)
+        if exclude_patterns:
+            cmd.extend(self.build_exclude_args(exclude_patterns))
 
         # Add -- to treat pattern as a literal argument, preventing injection
         cmd.append('--')
-        cmd.append(search_pattern)
+        cmd.append(pattern)
         cmd.append('.')  # Use current directory since we set cwd=base_path
         
         try:

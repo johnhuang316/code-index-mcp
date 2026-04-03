@@ -152,3 +152,22 @@ def test_grep_build_exclude_args():
     args = strategy.build_exclude_args(["logs/", "*.tmp"])
     assert '--exclude-dir=logs' in args
     assert '--exclude=*.tmp' in args
+
+
+@patch("code_index_mcp.search.ag.subprocess.run")
+def test_ag_no_default_exclude_flags(mock_run, tmp_path):
+    """ag respects .gitignore natively, should not have manual --ignore for default excludes."""
+    mock_run.return_value = SimpleNamespace(returncode=0, stdout="", stderr="")
+    from code_index_mcp.search.ag import AgStrategy
+    strategy = AgStrategy()
+    strategy.search("mongo", str(tmp_path))
+    cmd = mock_run.call_args[0][0]
+    # Should not have any --ignore flags (no default excludes injected)
+    assert '--ignore' not in cmd
+
+
+def test_ag_build_exclude_args():
+    from code_index_mcp.search.ag import AgStrategy
+    strategy = AgStrategy()
+    args = strategy.build_exclude_args(["logs/", "*.tmp"])
+    assert args == ['--ignore', 'logs', '--ignore', '*.tmp']
