@@ -124,7 +124,7 @@ class SearchStrategy(ABC):
     Each strategy is responsible for searching code using a specific tool or method.
     """
 
-    def build_exclude_args(self, exclude_patterns: list[str]) -> list[str]:
+    def build_exclude_args(self, exclude_patterns: List[str]) -> List[str]:
         """Translate user-configured exclude patterns into CLI arguments.
 
         Args:
@@ -160,7 +160,8 @@ class SearchStrategy(ABC):
         context_lines: int = 0,
         file_pattern: Optional[str] = None,
         fuzzy: bool = False,
-        regex: bool = False
+        regex: bool = False,
+        exclude_patterns: Optional[List[str]] = None
     ) -> Dict[str, List[Tuple[int, str]]]:
         """
         Execute a search using the specific strategy.

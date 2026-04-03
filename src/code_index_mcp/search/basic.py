@@ -59,7 +59,7 @@ class BasicSearchStrategy(SearchStrategy):
         file_pattern: Optional[str] = None,
         fuzzy: bool = False,
         regex: bool = False,
-        exclude_patterns: list = None
+        exclude_patterns: Optional[List[str]] = None
     ) -> Dict[str, List[Tuple[int, str]]]:
         """
         Execute a basic, line-by-line search.

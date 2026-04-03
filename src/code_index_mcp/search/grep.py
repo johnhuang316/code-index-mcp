@@ -36,7 +36,7 @@ class GrepStrategy(SearchStrategy):
         """Return True if path is the root of a git repository."""
         return os.path.isdir(os.path.join(path, '.git'))
 
-    def build_exclude_args(self, exclude_patterns: list) -> list:
+    def build_exclude_args(self, exclude_patterns: List[str]) -> List[str]:
         """
         Translate a list of exclude patterns into grep CLI arguments.
 

@@ -19,7 +19,7 @@ class AgStrategy(SearchStrategy):
         """Check if 'ag' command is available on the system."""
         return shutil.which('ag') is not None
 
-    def build_exclude_args(self, exclude_patterns: list) -> list:
+    def build_exclude_args(self, exclude_patterns: List[str]) -> List[str]:
         """Build ag --ignore args from a list of exclude patterns."""
         args = []
         for p in exclude_patterns:

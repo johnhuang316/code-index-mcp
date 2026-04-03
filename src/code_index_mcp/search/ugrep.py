@@ -19,7 +19,7 @@ class UgrepStrategy(SearchStrategy):
         """Check if 'ug' command is available on the system."""
         return shutil.which('ug') is not None
 
-    def build_exclude_args(self, exclude_patterns: list) -> list:
+    def build_exclude_args(self, exclude_patterns: List[str]) -> List[str]:
         """
         Translate a list of exclude patterns into ugrep CLI arguments.
 
@@ -43,7 +43,7 @@ class UgrepStrategy(SearchStrategy):
         file_pattern: Optional[str] = None,
         fuzzy: bool = False,
         regex: bool = False,
-        exclude_patterns: list = None
+        exclude_patterns: Optional[List[str]] = None
     ) -> Dict[str, List[Tuple[int, str]]]:
         """
         Execute a search using the 'ug' command-line tool.
