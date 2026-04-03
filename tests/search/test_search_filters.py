@@ -51,18 +51,21 @@ def test_basic_strategy_rejects_regex_mode_without_external_tool(tmp_path):
 
 
 @patch("code_index_mcp.search.ripgrep.subprocess.run")
-def test_ripgrep_strategy_adds_exclude_globs(mock_run, tmp_path):
+def test_ripgrep_uses_native_gitignore(mock_run, tmp_path):
+    """ripgrep should NOT have --no-ignore flag (uses native .gitignore)."""
     mock_run.return_value = SimpleNamespace(returncode=0, stdout="", stderr="")
-
     strategy = RipgrepStrategy()
-    strategy.configure_excludes(FileFilter())
-
     strategy.search("mongo", str(tmp_path))
-
     cmd = mock_run.call_args[0][0]
-    glob_args = [cmd[i + 1] for i, arg in enumerate(cmd) if arg == '--glob' and i + 1 < len(cmd)]
+    assert '--no-ignore' not in cmd
 
-    assert any(value.startswith('!**/node_modules/') for value in glob_args)
+
+@patch("code_index_mcp.search.ripgrep.subprocess.run")
+def test_ripgrep_build_exclude_args(mock_run, tmp_path):
+    """ripgrep should translate exclude patterns to --glob '!pattern' args."""
+    strategy = RipgrepStrategy()
+    args = strategy.build_exclude_args(["logs/", "*.generated.ts"])
+    assert args == ['--glob', '!logs/', '--glob', '!*.generated.ts']
 
 
 @patch("code_index_mcp.search.grep.subprocess.run")
