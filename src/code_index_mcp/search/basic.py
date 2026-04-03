@@ -7,6 +7,8 @@ import re
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+import pathspec
+
 from .base import SearchStrategy, create_word_boundary_pattern
 
 class BasicSearchStrategy(SearchStrategy):
@@ -40,6 +42,14 @@ class BasicSearchStrategy(SearchStrategy):
         # Use fnmatch for more complex patterns
         return fnmatch.fnmatch(filename, pattern)
 
+    def _load_gitignore(self, base_path: str):
+        """Load .gitignore from base_path and return a PathSpec, or None if absent."""
+        gitignore_path = os.path.join(base_path, '.gitignore')
+        if os.path.exists(gitignore_path):
+            with open(gitignore_path, 'r') as f:
+                return pathspec.PathSpec.from_lines("gitwildmatch", f)
+        return None
+
     def search(
         self,
         pattern: str,
@@ -48,7 +58,8 @@ class BasicSearchStrategy(SearchStrategy):
         context_lines: int = 0,
         file_pattern: Optional[str] = None,
         fuzzy: bool = False,
-        regex: bool = False
+        regex: bool = False,
+        exclude_patterns: list = None
     ) -> Dict[str, List[Tuple[int, str]]]:
         """
         Execute a basic, line-by-line search.
@@ -86,23 +97,29 @@ class BasicSearchStrategy(SearchStrategy):
         except re.error as e:
             raise ValueError(f"Invalid search pattern: {pattern}, error: {e}")
 
-        file_filter = getattr(self, 'file_filter', None)
-        base = Path(base_path)
+        spec = self._load_gitignore(base_path)
+        user_spec = None
+        if exclude_patterns:
+            user_spec = pathspec.PathSpec.from_lines("gitwildmatch", exclude_patterns)
 
         for root, dirs, files in os.walk(base_path):
-            if file_filter:
-                dirs[:] = [d for d in dirs if not file_filter.should_exclude_directory(d)]
+            # Always skip .git directory
+            dirs[:] = [d for d in dirs if d != '.git']
 
             for file in files:
                 if file_pattern and not self._matches_pattern(file, file_pattern):
                     continue
 
                 file_path = Path(root) / file
+                rel_path = os.path.relpath(file_path, base_path)
 
-                if file_filter and not file_filter.should_process_path(file_path, base):
+                # Check .gitignore
+                if spec and spec.match_file(rel_path):
                     continue
 
-                rel_path = os.path.relpath(file_path, base_path)
+                # Check user excludes
+                if user_spec and user_spec.match_file(rel_path):
+                    continue
 
                 try:
                     with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:

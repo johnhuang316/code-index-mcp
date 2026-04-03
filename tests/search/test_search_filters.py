@@ -15,11 +15,14 @@ if str(SRC_PATH) not in sys.path:
 from code_index_mcp.search.basic import BasicSearchStrategy
 from code_index_mcp.search.grep import GrepStrategy
 from code_index_mcp.search.ripgrep import RipgrepStrategy
-from code_index_mcp.utils.file_filter import FileFilter
 
 
 def test_basic_strategy_skips_excluded_directories(tmp_path):
+    """BasicSearchStrategy should skip directories listed in .gitignore."""
     base = tmp_path
+    # Create .gitignore that excludes node_modules
+    (base / '.gitignore').write_text("node_modules/\n")
+
     src_dir = base / "src"
     src_dir.mkdir()
     (src_dir / 'app.js').write_text("const db = 'mongo';\n")
@@ -29,8 +32,6 @@ def test_basic_strategy_skips_excluded_directories(tmp_path):
     (node_modules_dir / 'index.js').write_text("// mongo dependency\n")
 
     strategy = BasicSearchStrategy()
-    strategy.configure_excludes(FileFilter())
-
     results = strategy.search("mongo", str(base), case_sensitive=False)
 
     included_path = os.path.join("src", "app.js")
@@ -38,6 +39,25 @@ def test_basic_strategy_skips_excluded_directories(tmp_path):
 
     assert included_path in results
     assert excluded_path not in results
+
+
+def test_basic_strategy_respects_gitignore(tmp_path):
+    """Basic strategy should skip files matching .gitignore patterns."""
+    (tmp_path / ".gitignore").write_text("ignored_dir/\n")
+
+    src_dir = tmp_path / "src"
+    src_dir.mkdir()
+    (src_dir / "app.js").write_text("const x = 'hello';\n")
+
+    ignored = tmp_path / "ignored_dir"
+    ignored.mkdir()
+    (ignored / "file.js").write_text("const x = 'hello';\n")
+
+    strategy = BasicSearchStrategy()
+    results = strategy.search("hello", str(tmp_path))
+
+    assert os.path.join("src", "app.js") in results
+    assert os.path.join("ignored_dir", "file.js") not in results
 
 
 def test_basic_strategy_rejects_regex_mode_without_external_tool(tmp_path):
