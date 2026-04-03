@@ -20,7 +20,7 @@ Release work is gated: do not start the bump/tag flow from a dirty tree or the w
    - `minor`: backward-compatible features or capability expansions
    - `major`: breaking API/behavior changes or migration-required releases
 4. Confirm the target version and release branch with the user.
-5. Run the full test suite: `uv run pytest`.
+5. Run the full test suite: `uv pip install pytest && uv run python -m pytest tests/`.
 6. Update version files: `pyproject.toml`, `src/code_index_mcp/__init__.py`, `uv.lock`.
    - Regenerate `uv.lock` with the normal project workflow; do not hand-edit it.
 7. Ensure the staged diff only touches release-related files. If anything else is present, explain why before committing.

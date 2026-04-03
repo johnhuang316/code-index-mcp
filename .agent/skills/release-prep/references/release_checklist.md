@@ -25,10 +25,11 @@ git diff ${PREV}..HEAD --stat
   - `minor`: backward-compatible features
   - `major`: breaking changes / migration-required release
 
-- Run full test suite:
+- Run full test suite (pytest is not in project deps, install it first):
 
 ```bash
-uv run pytest
+uv pip install pytest
+uv run python -m pytest tests/
 ```
 
 - Update versions and lockfile:
