@@ -76,3 +76,12 @@ def test_grep_strategy_treats_regex_chars_as_literal_without_regex_mode(mock_run
 
     assert '-F' in cmd
     assert '-E' not in cmd
+
+
+def test_strategy_build_exclude_args_returns_list():
+    """Each strategy must implement build_exclude_args returning a list of CLI args."""
+    from code_index_mcp.search.ripgrep import RipgrepStrategy
+    strategy = RipgrepStrategy()
+    args = strategy.build_exclude_args(["logs/", "*.generated.ts"])
+    assert isinstance(args, list)
+    # Base class returns empty list, subclasses will override

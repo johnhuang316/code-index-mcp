@@ -126,15 +126,16 @@ class SearchStrategy(ABC):
     Each strategy is responsible for searching code using a specific tool or method.
     """
 
-    def configure_excludes(self, file_filter: Optional['FileFilter']) -> None:
-        """Configure shared exclusion settings for the strategy."""
-        self.file_filter = file_filter
-        if file_filter:
-            self.exclude_dirs = sorted(set(file_filter.exclude_dirs))
-            self.exclude_file_patterns = sorted(set(file_filter.exclude_files))
-        else:
-            self.exclude_dirs = []
-            self.exclude_file_patterns = []
+    def build_exclude_args(self, exclude_patterns: list[str]) -> list[str]:
+        """Translate user-configured exclude patterns into CLI arguments.
+
+        Args:
+            exclude_patterns: User-configured patterns to exclude (from additional_exclude_patterns)
+
+        Returns:
+            List of CLI arguments for this search tool
+        """
+        return []
 
     @property
     @abstractmethod
