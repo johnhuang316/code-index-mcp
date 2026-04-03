@@ -123,3 +123,32 @@ def test_ugrep_build_exclude_args(mock_run, tmp_path):
     args = strategy.build_exclude_args(["logs/", "*.tmp"])
     assert '--exclude-dir=logs' in args
     assert '--exclude=*.tmp' in args
+
+
+@patch("code_index_mcp.search.grep.subprocess.run")
+def test_grep_uses_git_grep_in_git_repo(mock_run, tmp_path):
+    """grep strategy should use 'git grep' when inside a git repo."""
+    (tmp_path / ".git").mkdir()
+    mock_run.return_value = SimpleNamespace(returncode=0, stdout="", stderr="")
+    strategy = GrepStrategy()
+    strategy.search("mongo", str(tmp_path))
+    cmd = mock_run.call_args[0][0]
+    assert cmd[0] == 'git' and cmd[1] == 'grep'
+
+
+@patch("code_index_mcp.search.grep.subprocess.run")
+def test_grep_falls_back_without_git(mock_run, tmp_path):
+    """grep strategy should use regular grep when not in a git repo."""
+    mock_run.return_value = SimpleNamespace(returncode=0, stdout="", stderr="")
+    strategy = GrepStrategy()
+    strategy.search("mongo", str(tmp_path))
+    cmd = mock_run.call_args[0][0]
+    assert cmd[0] == 'grep'
+    assert any('--exclude-dir' in arg for arg in cmd)
+
+
+def test_grep_build_exclude_args():
+    strategy = GrepStrategy()
+    args = strategy.build_exclude_args(["logs/", "*.tmp"])
+    assert '--exclude-dir=logs' in args
+    assert '--exclude=*.tmp' in args
