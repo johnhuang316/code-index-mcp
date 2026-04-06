@@ -286,6 +286,9 @@ class ProjectManagementService(BaseService):
                 return "monitoring_disabled"
 
         try:
+            # Capture current exclude patterns for use in the rebuild callback
+            rebuild_excludes = self._get_exclude_patterns()
+
             # Create rebuild callback that uses the deep index manager
             def rebuild_callback():
                 logger.info("File watcher triggered rebuild callback")
@@ -293,7 +296,7 @@ class ProjectManagementService(BaseService):
                     logger.debug(f"Starting shallow index rebuild for: {project_path}")
                     # Business logic: File changed, rebuild using SHALLOW index manager
                     try:
-                        if not self._shallow_manager.set_project_path(project_path):
+                        if not self._shallow_manager.set_project_path(project_path, rebuild_excludes):
                             logger.warning("Shallow manager set_project_path failed")
                             return False
                         if self._shallow_manager.build_index():

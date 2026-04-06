@@ -265,6 +265,10 @@ async def indexer_lifespan(_server: FastMCP) -> AsyncIterator[CodeIndexerContext
                         "Failed to apply file watcher config from env: %s", exc
                     )
 
+            # Replace the lifespan context settings with the fully-configured
+            # instance so all downstream services read the env config.
+            context.settings = pre_settings
+
             bootstrap_ctx = Context(
                 request_context=_BootstrapRequestContext(context), fastmcp=mcp
             )

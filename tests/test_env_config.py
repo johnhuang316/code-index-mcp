@@ -530,5 +530,204 @@ class TestFileWatcherDisabledPreventsStartup(unittest.TestCase):
         svc._watcher_tool.start_monitoring.assert_called_once()
 
 
+class TestBootstrapSettingsIdentity(unittest.TestCase):
+    """Verify the lifespan context.settings is the SAME instance that has env config."""
+
+    def setUp(self):
+        self._orig_project_path = _CLI_CONFIG.project_path
+        self._orig_fw_enabled = _CLI_CONFIG.file_watcher_enabled
+        self._orig_exclude = _CLI_CONFIG.additional_exclude_patterns
+
+    def tearDown(self):
+        _CLI_CONFIG.project_path = self._orig_project_path
+        _CLI_CONFIG.file_watcher_enabled = self._orig_fw_enabled
+        _CLI_CONFIG.additional_exclude_patterns = self._orig_exclude
+
+    @patch("code_index_mcp.server.ProjectManagementService")
+    @patch("code_index_mcp.server.ProjectSettings")
+    def test_context_settings_is_pre_settings_after_env_config(
+        self, mock_settings_cls, mock_pms_cls
+    ):
+        """After env config is applied, context.settings must be the pre_settings instance."""
+        _CLI_CONFIG.project_path = "/tmp/test_project"
+        _CLI_CONFIG.additional_exclude_patterns = ["vendor"]
+        _CLI_CONFIG.file_watcher_enabled = False
+
+        mock_pre_settings = MagicMock(name="pre_settings")
+        mock_lifespan_settings = MagicMock(name="lifespan_settings")
+
+        def settings_side_effect(path, skip_load=True):
+            if skip_load:
+                return mock_lifespan_settings
+            return mock_pre_settings
+
+        mock_settings_cls.side_effect = settings_side_effect
+
+        mock_pms_instance = MagicMock()
+        mock_pms_instance.initialize_project.return_value = "ok"
+        mock_pms_cls.return_value = mock_pms_instance
+
+        captured_context = None
+
+        async def _run():
+            nonlocal captured_context
+            async with indexer_lifespan(mcp) as ctx:
+                captured_context = ctx
+
+        asyncio.run(_run())
+
+        # The context.settings must be the pre_settings (env-configured) instance,
+        # NOT the original lifespan_settings (empty, skip_load=True).
+        self.assertIs(captured_context.settings, mock_pre_settings)
+
+    @patch("code_index_mcp.server.ProjectManagementService")
+    @patch("code_index_mcp.server.ProjectSettings")
+    def test_service_receives_env_configured_settings(
+        self, mock_settings_cls, mock_pms_cls
+    ):
+        """The ProjectManagementService constructed during bootstrap must see env config
+        in context.settings, so _get_exclude_patterns() returns the right values."""
+        _CLI_CONFIG.project_path = "/tmp/test_project"
+        _CLI_CONFIG.additional_exclude_patterns = ["vendor", ".cache"]
+        _CLI_CONFIG.file_watcher_enabled = False
+
+        mock_pre_settings = MagicMock(name="pre_settings")
+        mock_lifespan_settings = MagicMock(name="lifespan_settings")
+
+        def settings_side_effect(path, skip_load=True):
+            if skip_load:
+                return mock_lifespan_settings
+            return mock_pre_settings
+
+        mock_settings_cls.side_effect = settings_side_effect
+
+        # Capture the context that ProjectManagementService is constructed with
+        captured_bootstrap_settings = []
+
+        def capture_pms(bootstrap_ctx):
+            settings = bootstrap_ctx.request_context.lifespan_context.settings
+            captured_bootstrap_settings.append(settings)
+            mock_instance = MagicMock()
+            mock_instance.initialize_project.return_value = "ok"
+            return mock_instance
+
+        mock_pms_cls.side_effect = capture_pms
+
+        async def _run():
+            async with indexer_lifespan(mcp) as ctx:
+                pass
+
+        asyncio.run(_run())
+
+        # The settings seen by ProjectManagementService must be the pre_settings
+        self.assertEqual(len(captured_bootstrap_settings), 1)
+        self.assertIs(captured_bootstrap_settings[0], mock_pre_settings)
+
+    @patch("code_index_mcp.server.ProjectManagementService")
+    @patch("code_index_mcp.server.ProjectSettings")
+    def test_watcher_disabled_config_on_context_settings(
+        self, mock_settings_cls, mock_pms_cls
+    ):
+        """When FILE_WATCHER_ENABLED=false, update_file_watcher_config is called on the
+        instance that ends up in context.settings."""
+        _CLI_CONFIG.project_path = "/tmp/test_project"
+        _CLI_CONFIG.file_watcher_enabled = False
+        _CLI_CONFIG.additional_exclude_patterns = None
+
+        mock_pre_settings = MagicMock(name="pre_settings")
+        mock_lifespan_settings = MagicMock(name="lifespan_settings")
+
+        def settings_side_effect(path, skip_load=True):
+            if skip_load:
+                return mock_lifespan_settings
+            return mock_pre_settings
+
+        mock_settings_cls.side_effect = settings_side_effect
+
+        mock_pms_instance = MagicMock()
+        mock_pms_instance.initialize_project.return_value = "ok"
+        mock_pms_cls.return_value = mock_pms_instance
+
+        captured_context = None
+
+        async def _run():
+            nonlocal captured_context
+            async with indexer_lifespan(mcp) as ctx:
+                captured_context = ctx
+
+        asyncio.run(_run())
+
+        self.assertIs(captured_context.settings, mock_pre_settings)
+        mock_pre_settings.update_file_watcher_config.assert_called_once_with(
+            {"enabled": False}
+        )
+
+
+class TestWatcherRebuildExcludePatterns(unittest.TestCase):
+    """Verify watcher rebuild callback passes exclude patterns."""
+
+    @patch("code_index_mcp.services.project_management_service.get_index_manager")
+    @patch("code_index_mcp.services.project_management_service.get_shallow_index_manager")
+    def test_rebuild_callback_passes_exclude_patterns(self, mock_shallow_fn, mock_deep_fn):
+        """The watcher rebuild callback must pass exclude patterns to set_project_path."""
+        from code_index_mcp.services.project_management_service import ProjectManagementService
+
+        mock_settings = MagicMock()
+        mock_settings.get_file_watcher_config.return_value = {
+            "enabled": True,
+            "debounce_seconds": 6.0,
+            "monitored_extensions": [],
+            "observer_type": "auto",
+        }
+        mock_settings.load_config.return_value = {
+            "additional_exclude_patterns": ["vendor", ".cache"],
+            "file_watcher": {"exclude_patterns": ["build"]},
+        }
+
+        ctx = MagicMock()
+        ctx.request_context.lifespan_context.settings = mock_settings
+        ctx.request_context.lifespan_context.base_path = "/tmp/project"
+        ctx.request_context.lifespan_context.file_count = 0
+        ctx.request_context.lifespan_context.file_watcher_service = None
+
+        svc = ProjectManagementService(ctx)
+
+        # Mock watcher tool to capture the callback
+        mock_watcher_tool = MagicMock()
+        mock_watcher_tool.start_monitoring.return_value = True
+        svc._watcher_tool = mock_watcher_tool
+
+        # Mock shallow manager
+        mock_shallow = MagicMock()
+        mock_shallow.set_project_path.return_value = True
+        mock_shallow.build_index.return_value = True
+        mock_shallow.get_file_list.return_value = ["a.py", "b.py"]
+        svc._shallow_manager = mock_shallow
+
+        svc._setup_file_monitoring("/tmp/project")
+
+        # Extract the rebuild callback that was passed to start_monitoring
+        mock_watcher_tool.start_monitoring.assert_called_once()
+        rebuild_callback = mock_watcher_tool.start_monitoring.call_args[0][1]
+
+        # Reset the mock so we can track the callback's call
+        mock_shallow.reset_mock()
+        mock_shallow.set_project_path.return_value = True
+        mock_shallow.build_index.return_value = True
+        mock_shallow.get_file_list.return_value = ["a.py"]
+
+        # Invoke the callback (simulating a file change)
+        rebuild_callback()
+
+        # Verify set_project_path was called WITH exclude patterns
+        mock_shallow.set_project_path.assert_called_once()
+        call_args = mock_shallow.set_project_path.call_args
+        # Should have excludes as second positional arg
+        excludes_arg = call_args[0][1] if len(call_args[0]) > 1 else call_args[1].get("excludes", [])
+        self.assertIn("vendor", excludes_arg)
+        self.assertIn(".cache", excludes_arg)
+        self.assertIn("build", excludes_arg)
+
+
 if __name__ == "__main__":
     unittest.main()
