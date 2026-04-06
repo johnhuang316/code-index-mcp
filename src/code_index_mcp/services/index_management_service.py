@@ -131,9 +131,32 @@ class IndexManagementService(BaseService):
             pass
         return patterns
 
-    def _execute_rebuild_workflow(self) -> IndexRebuildResult:
+    def _get_indexing_config(self) -> dict:
+        """Read indexing configuration from project settings.
+
+        Returns:
+            Dictionary with indexing config (max_workers, parallel, timeout_seconds).
+        """
+        if not self.settings:
+            return {}
+        try:
+            return self.settings.get_indexing_config()
+        except Exception:  # noqa: BLE001
+            return {}
+
+    def _execute_rebuild_workflow(
+        self,
+        max_workers: int | None = None,
+        timeout: int | None = None,
+    ) -> IndexRebuildResult:
         """
         Execute the core index rebuild business workflow.
+
+        Args:
+            max_workers: Maximum number of parallel workers.
+                When None, falls back to settings then auto-detect.
+            timeout: Parallel build timeout in seconds.
+                When None, falls back to settings then auto-scale.
 
         Returns:
             IndexRebuildResult with rebuild data
@@ -143,19 +166,53 @@ class IndexManagementService(BaseService):
         # Get user-configured exclude patterns
         excludes = self._get_exclude_patterns()
 
+        # Merge explicit params with persistent settings
+        indexing_cfg = self._get_indexing_config()
+        effective_workers = max_workers if max_workers is not None else indexing_cfg.get("max_workers")
+        effective_timeout = timeout if timeout is not None else indexing_cfg.get("timeout_seconds")
+
+        if effective_workers is not None and effective_workers < 1:
+            raise ValueError("max_workers must be >= 1, got %d" % effective_workers)
+        if effective_timeout is not None and effective_timeout < 1:
+            raise ValueError("timeout must be >= 1, got %d" % effective_timeout)
+
         # Set project path in index manager with exclusions
         if not self._index_manager.set_project_path(self.base_path, excludes):
             raise RuntimeError("Failed to set project path in index manager")
 
-        # Rebuild the index
-        if not self._index_manager.refresh_index():
-            raise RuntimeError("Failed to rebuild index")
+        # Rebuild the index (returns False on timeout/partial build)
+        rebuild_ok = self._index_manager.refresh_index(
+            max_workers=effective_workers,
+            timeout=effective_timeout,
+        )
 
         # Get stats for result
         stats = self._index_manager.get_index_stats()
         file_count = stats.get('indexed_files', 0)
 
         rebuild_time = time.time() - start_time
+
+        if not rebuild_ok:
+            # Distinguish timeout from other failures using stored build stats
+            build_stats = getattr(self._index_manager, '_last_build_stats', {})
+            if build_stats.get('timed_out'):
+                total = build_stats.get('total_files', '?')
+                return IndexRebuildResult(
+                    file_count=file_count,
+                    rebuild_time=rebuild_time,
+                    status='partial',
+                    message=(
+                        f"Deep index build timed out. "
+                        f"Partial results: {file_count} of {total} files processed."
+                    ),
+                )
+            else:
+                return IndexRebuildResult(
+                    file_count=file_count,
+                    rebuild_time=rebuild_time,
+                    status='error',
+                    message="Deep index build failed. Check logs for details.",
+                )
 
         return IndexRebuildResult(
             file_count=file_count,
@@ -175,7 +232,10 @@ class IndexManagementService(BaseService):
         Returns:
             Formatted result string for MCP response
         """
-        return f"Project re-indexed. Found {result.file_count} files."
+        if result.status == 'success':
+            return f"Project re-indexed. Found {result.file_count} files."
+        # For 'partial' (timeout) and 'error' statuses, use the descriptive message
+        return result.message
 
     def build_shallow_index(self) -> str:
         """
@@ -215,11 +275,25 @@ class IndexManagementService(BaseService):
 
         return f"Shallow index built{f' with {count} files' if count else ''}."
 
-    def rebuild_deep_index(self) -> str:
-        """Rebuild the deep index using the original workflow."""
+    def rebuild_deep_index(
+        self,
+        max_workers: int | None = None,
+        timeout: int | None = None,
+    ) -> str:
+        """Rebuild the deep index using the original workflow.
+
+        Args:
+            max_workers: Maximum number of parallel workers.
+                When None, falls back to settings then auto-detect.
+            timeout: Parallel build timeout in seconds.
+                When None, falls back to settings then auto-scale.
+        """
         # Business validation
         self._validate_rebuild_request()
 
         # Deep rebuild via existing workflow
-        result = self._execute_rebuild_workflow()
+        result = self._execute_rebuild_workflow(
+            max_workers=max_workers,
+            timeout=timeout,
+        )
         return self._format_rebuild_result(result)

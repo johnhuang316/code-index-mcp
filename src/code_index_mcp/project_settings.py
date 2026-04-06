@@ -544,6 +544,40 @@ class ProjectSettings:
         config["file_watcher"].update(updates)
         self.save_config(config)
 
+    def get_indexing_config(self) -> dict:
+        """
+        Get indexing-specific configuration.
+
+        Returns:
+            dict: Indexing configuration with defaults
+        """
+        config = self.load_config()
+        default_config = {
+            "max_workers": None,  # None = auto (min(4, cpu_count))
+            "timeout_seconds": None,  # None = auto-scale based on file count
+        }
+
+        indexing_config = config.get("indexing", {})
+        for key, default_value in default_config.items():
+            if key not in indexing_config:
+                indexing_config[key] = default_value
+
+        return indexing_config
+
+    def update_indexing_config(self, updates: dict) -> None:
+        """
+        Update indexing configuration.
+
+        Args:
+            updates: Dictionary of configuration updates
+        """
+        config = self.load_config()
+        if "indexing" not in config:
+            config["indexing"] = self.get_indexing_config()
+
+        config["indexing"].update(updates)
+        self.save_config(config)
+
     def update_exclude_patterns(self, patterns: list) -> None:
         """Update project-level exclude patterns.
 

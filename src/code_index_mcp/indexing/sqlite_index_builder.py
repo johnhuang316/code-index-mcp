@@ -18,7 +18,26 @@ from .models import FileInfo, SymbolInfo
 
 logger = logging.getLogger(__name__)
 
-PARALLEL_BUILD_TIMEOUT_SECONDS = 30
+# Dynamic timeout bounds
+MIN_TIMEOUT_SECONDS = 30
+MAX_TIMEOUT_SECONDS = 600
+TIMEOUT_PER_FILE_SECONDS = 0.5
+
+
+def _compute_parallel_timeout(file_count: int, explicit_timeout: Optional[int] = None) -> float:
+    """Compute timeout for parallel build based on file count.
+
+    Args:
+        file_count: Number of files to process.
+        explicit_timeout: Explicit override in seconds; used as-is when provided.
+
+    Returns:
+        Timeout in seconds.
+    """
+    if explicit_timeout is not None:
+        return float(explicit_timeout)
+    scaled = file_count * TIMEOUT_PER_FILE_SECONDS
+    return float(max(MIN_TIMEOUT_SECONDS, min(scaled, MAX_TIMEOUT_SECONDS)))
 
 
 class SQLiteIndexBuilder(JSONIndexBuilder):
@@ -42,6 +61,7 @@ class SQLiteIndexBuilder(JSONIndexBuilder):
         self,
         parallel: bool = True,
         max_workers: Optional[int] = None,
+        timeout: Optional[int] = None,
     ) -> Dict[str, int]:
         """
         Build the SQLite index and return lightweight statistics.
@@ -49,10 +69,17 @@ class SQLiteIndexBuilder(JSONIndexBuilder):
         Args:
             parallel: Whether to parse files in parallel.
             max_workers: Optional override for worker count.
+            timeout: Optional override for parallel build timeout in seconds.
+                When None, timeout scales dynamically with file count.
 
         Returns:
             Dictionary with totals for files, symbols, and languages.
         """
+        if max_workers is not None and max_workers < 1:
+            raise ValueError("max_workers must be >= 1, got %d" % max_workers)
+        if timeout is not None and timeout < 1:
+            raise ValueError("timeout must be >= 1, got %d" % timeout)
+
         logger.info("Building SQLite index (parallel=%s)...", parallel)
         start_time = time.time()
 
@@ -67,6 +94,8 @@ class SQLiteIndexBuilder(JSONIndexBuilder):
                 "files": 0,
                 "symbols": 0,
                 "languages": 0,
+                "timed_out": False,
+                "total_files": 0,
             }
 
         specialized_extensions = set(self.strategy_factory.get_specialized_extensions())
@@ -87,6 +116,13 @@ class SQLiteIndexBuilder(JSONIndexBuilder):
                     for file_path in files_to_process
                 }
 
+                effective_timeout = _compute_parallel_timeout(total_files, timeout)
+                logger.info(
+                    "Parallel build timeout: %.0fs for %d files",
+                    effective_timeout,
+                    total_files,
+                )
+
                 def _iter_results():
                     nonlocal timed_out
 
@@ -94,7 +130,7 @@ class SQLiteIndexBuilder(JSONIndexBuilder):
                     try:
                         for future in as_completed(
                             future_to_file,
-                            timeout=PARALLEL_BUILD_TIMEOUT_SECONDS,
+                            timeout=effective_timeout,
                         ):
                             completed_futures.add(future)
                             file_path = future_to_file[future]
@@ -222,6 +258,8 @@ class SQLiteIndexBuilder(JSONIndexBuilder):
             "files": processed_files,
             "symbols": total_symbols,
             "languages": len(languages),
+            "timed_out": timed_out,
+            "total_files": total_files,
         }
 
     # Internal helpers -------------------------------------------------
