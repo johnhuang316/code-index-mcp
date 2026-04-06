@@ -18,8 +18,6 @@ from .models import FileInfo, SymbolInfo
 
 logger = logging.getLogger(__name__)
 
-PARALLEL_BUILD_TIMEOUT_SECONDS = 30
-
 # Dynamic timeout bounds
 MIN_TIMEOUT_SECONDS = 30
 MAX_TIMEOUT_SECONDS = 600
@@ -77,6 +75,11 @@ class SQLiteIndexBuilder(JSONIndexBuilder):
         Returns:
             Dictionary with totals for files, symbols, and languages.
         """
+        if max_workers is not None and max_workers < 1:
+            raise ValueError("max_workers must be >= 1, got %d" % max_workers)
+        if timeout is not None and timeout < 0:
+            raise ValueError("timeout must be >= 0, got %d" % timeout)
+
         logger.info("Building SQLite index (parallel=%s)...", parallel)
         start_time = time.time()
 

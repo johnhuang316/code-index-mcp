@@ -284,3 +284,108 @@ class TestParallelBuildConcurrencySafety:
         # max_workers > file count is fine; builder clamps to file count
         stats = builder.build_index(parallel=True, max_workers=16)
         assert stats["files"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Parameter validation
+# ---------------------------------------------------------------------------
+
+
+class TestParameterValidation:
+    """Verify max_workers and timeout reject invalid values."""
+
+    def test_build_index_rejects_zero_max_workers(self, tmp_path):
+        builder, _ = _make_builder(tmp_path)
+        with pytest.raises(ValueError, match="max_workers must be >= 1"):
+            builder.build_index(parallel=True, max_workers=0)
+
+    def test_build_index_rejects_negative_max_workers(self, tmp_path):
+        builder, _ = _make_builder(tmp_path)
+        with pytest.raises(ValueError, match="max_workers must be >= 1"):
+            builder.build_index(parallel=True, max_workers=-1)
+
+    def test_build_index_rejects_negative_timeout(self, tmp_path):
+        builder, _ = _make_builder(tmp_path)
+        with pytest.raises(ValueError, match="timeout must be >= 0"):
+            builder.build_index(parallel=True, timeout=-5)
+
+    def test_build_index_accepts_zero_timeout(self, tmp_path):
+        """timeout=0 is valid (means no waiting), should not raise ValueError."""
+        builder, _ = _make_builder(tmp_path)
+        # Create a file so the builder has work to do
+        project_dir = tmp_path / "project"
+        (project_dir / "a.py").write_text("x = 1\n")
+        stats = builder.build_index(parallel=True, timeout=0, max_workers=1)
+        assert stats["files"] >= 0  # may timeout but should not raise ValueError
+
+
+# ---------------------------------------------------------------------------
+# Settings-merge override logic
+# ---------------------------------------------------------------------------
+
+
+class TestSettingsMergeOverride:
+    """Verify explicit params override settings values in _execute_rebuild_workflow."""
+
+    def test_explicit_params_override_settings(self, tmp_path):
+        from code_index_mcp.services.index_management_service import IndexManagementService
+
+        project_dir = tmp_path / "proj"
+        project_dir.mkdir()
+        (project_dir / "a.py").write_text("x = 1\n")
+
+        service = IndexManagementService.__new__(IndexManagementService)
+
+        # Mock the helper that provides base_path and settings
+        mock_helper = MagicMock()
+        mock_helper.base_path = str(project_dir)
+        mock_helper.settings.get_indexing_config.return_value = {
+            "max_workers": 2,
+            "timeout_seconds": 60,
+        }
+        mock_helper.settings.get_file_watcher_config.return_value = {}
+        service.helper = mock_helper
+
+        # Mock the index manager to capture passed params
+        captured = {}
+        mock_mgr = MagicMock()
+        mock_mgr.set_project_path.return_value = True
+        mock_mgr.get_index_stats.return_value = {
+            "files": 1, "symbols": 0, "languages": 0,
+        }
+
+        def fake_refresh(max_workers=None, timeout=None):
+            captured["max_workers"] = max_workers
+            captured["timeout"] = timeout
+            return True
+
+        mock_mgr.refresh_index.side_effect = fake_refresh
+        service._index_manager = mock_mgr
+
+        # Shallow manager stub
+        service._shallow_manager = MagicMock()
+
+        # Call with explicit override
+        service._execute_rebuild_workflow(max_workers=8)
+
+        # Explicit max_workers=8 should override settings' 2
+        assert captured["max_workers"] == 8
+        # timeout was not passed explicitly, so settings' 60 should be used
+        assert captured["timeout"] == 60
+
+
+# ---------------------------------------------------------------------------
+# Indexing config round-trip
+# ---------------------------------------------------------------------------
+
+
+class TestIndexingConfigRoundTrip:
+    """Verify indexing config persists and loads correctly."""
+
+    def test_update_and_get_indexing_config(self, tmp_path):
+        from code_index_mcp.project_settings import ProjectSettings
+
+        settings = ProjectSettings(str(tmp_path))
+        settings.update_indexing_config({"max_workers": 8})
+        config = settings.get_indexing_config()
+        assert config["max_workers"] == 8

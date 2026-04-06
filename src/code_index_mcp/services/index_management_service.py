@@ -171,6 +171,11 @@ class IndexManagementService(BaseService):
         effective_workers = max_workers if max_workers is not None else indexing_cfg.get("max_workers")
         effective_timeout = timeout if timeout is not None else indexing_cfg.get("timeout_seconds")
 
+        if effective_workers is not None and effective_workers < 1:
+            raise ValueError("max_workers must be >= 1, got %d" % effective_workers)
+        if effective_timeout is not None and effective_timeout < 0:
+            raise ValueError("timeout must be >= 0, got %d" % effective_timeout)
+
         # Set project path in index manager with exclusions
         if not self._index_manager.set_project_path(self.base_path, excludes):
             raise RuntimeError("Failed to set project path in index manager")
