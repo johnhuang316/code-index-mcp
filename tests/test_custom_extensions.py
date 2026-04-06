@@ -189,3 +189,66 @@ class TestCLIExtraExtensions:
         from code_index_mcp.server import _parse_args
         args = _parse_args([])
         assert args.extra_extensions is None
+
+
+# --- Clearing stored extensions ---
+
+
+class TestClearingStoredExtensions:
+    """Test that extra_extensions=[] clears previously persisted extensions."""
+
+    def test_empty_list_clears_stored_extensions(self, tmp_path):
+        """Passing extra_extensions=[] should clear previously stored extensions."""
+        settings = ProjectSettings(str(tmp_path))
+        settings.update_extra_extensions([".rsc", ".conf"])
+        assert len(settings.get_extra_extensions()) == 2
+
+        settings.update_extra_extensions([])
+        assert settings.get_extra_extensions() == []
+
+    def test_none_does_not_touch_stored_extensions(self, tmp_path):
+        """extra_extensions=None (not provided) should leave stored config intact."""
+        settings = ProjectSettings(str(tmp_path))
+        settings.update_extra_extensions([".rsc"])
+        assert len(settings.get_extra_extensions()) == 1
+
+        # Simulate service-layer condition: None means "not provided"
+        extra_extensions = None
+        if extra_extensions is not None:
+            settings.update_extra_extensions(extra_extensions)
+
+        # Extensions should still be there
+        assert settings.get_extra_extensions() == [".rsc"]
+
+
+# --- Watcher rebuild preserves extensions ---
+
+
+class TestWatcherRebuildPreservesExtensions:
+    """Test that watcher-triggered rebuilds preserve custom extension files."""
+
+    def test_rebuild_preserves_custom_extension_files(self, tmp_path):
+        """After a simulated watcher rebuild, custom-extension files must still be indexed."""
+        (tmp_path / "main.py").write_text("print('hello')")
+        (tmp_path / "router.rsc").write_text("/ip address add")
+
+        extra_exts = [".rsc"]
+
+        # Initial build with custom extensions
+        mgr = ShallowIndexManager()
+        assert mgr.set_project_path(str(tmp_path), extra_extensions=extra_exts)
+        assert mgr.build_index()
+        files = mgr.get_file_list()
+        assert any(f.endswith(".rsc") for f in files)
+
+        # Simulate buggy rebuild WITHOUT extra_extensions (demonstrates the bug)
+        assert mgr.set_project_path(str(tmp_path))
+        assert mgr.build_index()
+        files_after_bad_rebuild = mgr.get_file_list()
+        assert not any(f.endswith(".rsc") for f in files_after_bad_rebuild)
+
+        # Simulate correct rebuild WITH extra_extensions (the fix)
+        assert mgr.set_project_path(str(tmp_path), extra_extensions=extra_exts)
+        assert mgr.build_index()
+        files_after_good_rebuild = mgr.get_file_list()
+        assert any(f.endswith(".rsc") for f in files_after_good_rebuild)

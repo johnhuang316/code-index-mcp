@@ -114,7 +114,7 @@ class ProjectManagementService(BaseService):
         normalized_path = self._config_tool.normalize_project_path(path)
 
         # Persist extra extensions if provided via tool parameter
-        if extra_extensions and self.settings:
+        if extra_extensions is not None and self.settings:
             self.settings.update_extra_extensions(extra_extensions)
 
         # Business step 2: Cleanup existing project state
@@ -269,7 +269,13 @@ class ProjectManagementService(BaseService):
                     logger.debug(f"Starting shallow index rebuild for: {project_path}")
                     # Business logic: File changed, rebuild using SHALLOW index manager
                     try:
-                        if not self._shallow_manager.set_project_path(project_path):
+                        # Re-read exclude patterns and extra extensions from
+                        # settings so custom-extension files survive rebuilds.
+                        excludes = self._get_exclude_patterns()
+                        extra_exts = self._get_extra_extensions()
+                        if not self._shallow_manager.set_project_path(
+                            project_path, excludes, extra_extensions=extra_exts
+                        ):
                             logger.warning("Shallow manager set_project_path failed")
                             return False
                         if self._shallow_manager.build_index():
