@@ -48,6 +48,13 @@ def detect_encoding(raw_bytes: bytes) -> str:
         logger.debug(
             "Detected encoding: %s (confidence: %.2f)", detected, confidence
         )
+        # Normalize ASCII to UTF-8: when only a 32KB sample is analysed the
+        # detector may return "ascii" even though bytes beyond the sample
+        # contain non-ASCII content.  Since ASCII is a strict subset of
+        # UTF-8, promoting to UTF-8 is always safe and avoids silent
+        # corruption via errors='replace' on the tail of the file.
+        if detected == "ascii":
+            return "utf-8"
         return detected
 
     logger.debug("Could not detect encoding, falling back to utf-8")

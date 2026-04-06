@@ -12,7 +12,7 @@ class TestDetectEncoding:
     def test_detect_utf8(self):
         raw = "Hello, world!".encode("utf-8")
         enc = detect_encoding(raw)
-        assert enc == "ascii" or enc == "utf-8"  # ASCII is a subset of UTF-8
+        assert enc == "utf-8"  # ASCII is always normalised to utf-8
 
     def test_detect_utf8_with_bom(self):
         raw = b"\xef\xbb\xbf" + "Hello".encode("utf-8")
@@ -66,7 +66,9 @@ class TestDetectEncoding:
     def test_detect_pure_ascii(self):
         raw = b"def foo():\n    return 42\n"
         enc = detect_encoding(raw)
-        assert enc.lower() in ("ascii", "utf-8")
+        # ASCII is always normalised to UTF-8 to avoid corruption when
+        # the sample is pure ASCII but the full file contains non-ASCII.
+        assert enc == "utf-8"
 
     def test_detect_encoding_logs_confidence(self, caplog):
         """Confidence score should be logged at DEBUG level."""
@@ -165,6 +167,38 @@ class TestReadFileContent:
         f.write_bytes(text.encode("gbk"))
         content = read_file_content(str(f))
         assert "\u4e2d\u6587\u6ce8\u91ca" in content
+
+
+class TestDelayedNonAscii:
+    """Tests for files whose first 32KB are ASCII but later content is not."""
+
+    def test_read_file_with_non_ascii_after_32kb(self, tmp_path):
+        """Content beyond the 32KB detection sample must not be corrupted."""
+        f = tmp_path / "delayed.py"
+        # Build a file: >32KB of pure ASCII, then UTF-8 Chinese text
+        ascii_prefix = "# filler line\n" * 2500  # ~37.5 KB of ASCII
+        assert len(ascii_prefix.encode("ascii")) > 32 * 1024
+        utf8_tail = "# \u4e2d\u6587\u6ce8\u91ca\uff1a\u8fd9\u662f\u5ef6\u8fdf\u51fa\u73b0\u7684\u975e ASCII \u5185\u5bb9\n"
+        f.write_bytes(ascii_prefix.encode("ascii") + utf8_tail.encode("utf-8"))
+
+        content = read_file_content(str(f))
+        # The Chinese characters must survive round-trip without replacement
+        assert "\u4e2d\u6587\u6ce8\u91ca" in content
+        assert "\ufffd" not in content  # no replacement characters
+
+    def test_open_with_detected_encoding_non_ascii_after_32kb(self, tmp_path):
+        """open_with_detected_encoding must not corrupt bytes beyond the sample."""
+        f = tmp_path / "delayed_stream.py"
+        ascii_prefix = "# padding\n" * 3500  # ~38.5 KB
+        assert len(ascii_prefix.encode("ascii")) > 32 * 1024
+        utf8_tail = "# \u8fd9\u662f\u5ef6\u8fdf\u7684\u975eASCII\u5185\u5bb9\n"
+        f.write_bytes(ascii_prefix.encode("ascii") + utf8_tail.encode("utf-8"))
+
+        with open_with_detected_encoding(str(f)) as fh:
+            lines = fh.readlines()
+        combined = "".join(lines)
+        assert "\u5ef6\u8fdf" in combined
+        assert "\ufffd" not in combined
 
 
 class TestOpenWithDetectedEncoding:
