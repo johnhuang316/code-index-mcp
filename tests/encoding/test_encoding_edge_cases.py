@@ -66,33 +66,42 @@ class TestJSONIndexBuilderLightweightDelayedNonAscii:
     """JSONIndexBuilder lightweight mode on files with delayed non-ASCII."""
 
     def test_lightweight_mode_preserves_delayed_non_ascii(self, tmp_path):
-        """Non-ASCII appearing after line 100 (but before LIGHTWEIGHT_MAX_LINES)
+        """Non-ASCII appearing after the 32KB detection sample boundary
         must not be corrupted when the builder uses lightweight streaming."""
         from code_index_mcp.indexing.json_index_builder import (
             JSONIndexBuilder,
             LIGHTWEIGHT_MAX_LINES,
         )
-        from code_index_mcp.utils.encoding import open_with_detected_encoding
+        from code_index_mcp.utils.encoding import (
+            open_with_detected_encoding,
+            _DETECTION_SAMPLE_SIZE,
+        )
 
-        # Build a file that triggers lightweight mode (>1MB) with non-ASCII
-        # appearing well after the first 32KB detection sample.
+        # Build a file that exceeds 1MB (triggers lightweight mode) with
+        # non-ASCII appearing AFTER the 32KB detection sample.
         lines = []
-        for i in range(900):
-            lines.append(f"x = 1  # padding line number {i}\n")
-        # Place Chinese content at line 901 (well past 32KB sample, but within
-        # LIGHTWEIGHT_MAX_LINES = 1000)
-        lines.append("# \u4e2d\u6587\u6ce8\u91ca\uff1a\u8fd9\u662f\u5ef6\u8fdf\u7684\u975eASCII\u5185\u5bb9\n")
-        for i in range(901, 1100):
-            lines.append(f"y = 2  # more padding {i}\n")
+        total_bytes = 0
+        i = 0
+        # Fill past the detection sample boundary
+        while total_bytes < _DETECTION_SAMPLE_SIZE + 1024:
+            line = f"x = 1  # padding line number {i:06d}\n"
+            lines.append(line)
+            total_bytes += len(line)
+            i += 1
 
-        content_bytes = "".join(lines).encode("utf-8")
+        # Verify we actually crossed the boundary
+        assert total_bytes > _DETECTION_SAMPLE_SIZE
+
+        # Place Chinese content (within LIGHTWEIGHT_MAX_LINES)
+        assert len(lines) < LIGHTWEIGHT_MAX_LINES
+        lines.append("# \u4e2d\u6587\u6ce8\u91ca\uff1a\u8fd9\u662f\u5ef6\u8fdf\u7684\u975eASCII\u5185\u5bb9\n")
+
         # Pad to exceed MAX_FILE_SIZE (1MB) so lightweight mode triggers
-        if len(content_bytes) < 1 * 1024 * 1024 + 1:
-            extra_lines = []
-            while len(content_bytes) < 1 * 1024 * 1024 + 1:
-                extra_lines.append("z = 3  # bulk padding\n")
-                content_bytes = ("".join(lines) + "".join(extra_lines)).encode("utf-8")
-            lines.extend(extra_lines)
+        while total_bytes < 1 * 1024 * 1024 + 1:
+            line = f"z = 3  # bulk padding {i:06d}\n"
+            lines.append(line)
+            total_bytes += len(line)
+            i += 1
 
         file_path = tmp_path / "big_file.py"
         file_path.write_bytes("".join(lines).encode("utf-8"))
@@ -101,22 +110,50 @@ class TestJSONIndexBuilderLightweightDelayedNonAscii:
         assert os.path.getsize(str(file_path)) > 1 * 1024 * 1024
 
         builder = JSONIndexBuilder(str(tmp_path))
-        # _process_file expects a set of specialized extensions
         specialized_exts = builder.strategy_factory.get_specialized_extensions()
         result = builder._process_file(str(file_path), specialized_exts)
 
-        # result is (symbols, file_info_dict, language, is_specialized) or None
         assert result is not None
         symbols, file_info_dict, language, is_specialized = result
-        # The parse succeeded without error, confirming the content was decoded
-        # correctly.  Verify via open_with_detected_encoding that the Chinese
-        # text survives the same streaming path used by lightweight mode.
+
+        # Verify via open_with_detected_encoding that the Chinese text
+        # survives the same streaming path used by lightweight mode.
         with open_with_detected_encoding(str(file_path)) as fh:
             read_lines = []
-            for i, line in enumerate(fh):
-                if i >= LIGHTWEIGHT_MAX_LINES:
+            for idx, line in enumerate(fh):
+                if idx >= LIGHTWEIGHT_MAX_LINES:
                     break
                 read_lines.append(line)
         content = "".join(read_lines)
         assert "\u4e2d\u6587\u6ce8\u91ca" in content
         assert "\ufffd" not in content  # no replacement characters
+
+
+class TestJSONIndexBuilderDelayedGBK:
+    """JSONIndexBuilder non-lightweight mode with delayed GBK content."""
+
+    def test_non_lightweight_preserves_delayed_gbk(self, tmp_path):
+        """A <1MB file with ASCII prefix and GBK tail must index without corruption."""
+        from code_index_mcp.indexing.json_index_builder import JSONIndexBuilder
+
+        # Build a file under 1MB with >32KB ASCII prefix followed by GBK
+        ascii_prefix = "# filler line\n" * 2500  # ~37.5KB
+        gbk_tail = (
+            "# \u4e2d\u6587\u6ce8\u91ca\uff1a\u8fd9\u662f\u5ef6\u8fdf\u51fa\u73b0\u7684GBK\u5185\u5bb9\n"
+            "def process():\n"
+            "    return '\u5904\u7406\u5b8c\u6210'\n"
+        )
+        content_bytes = ascii_prefix.encode("ascii") + gbk_tail.encode("gbk")
+        assert len(content_bytes) < 1 * 1024 * 1024  # under 1MB
+
+        file_path = tmp_path / "delayed_gbk.py"
+        file_path.write_bytes(content_bytes)
+
+        builder = JSONIndexBuilder(str(tmp_path))
+        specialized_exts = builder.strategy_factory.get_specialized_extensions()
+        result = builder._process_file(str(file_path), specialized_exts)
+
+        # Should not return None (file should be processable)
+        assert result is not None
+        symbols, file_info_dict, language, is_specialized = result
+        assert file_info_dict is not None

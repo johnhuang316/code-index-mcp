@@ -25,6 +25,15 @@ logger = logging.getLogger(__name__)
 _DETECTION_SAMPLE_SIZE = 32 * 1024
 
 
+def _is_pure_ascii(data: bytes) -> bool:
+    """Check if all bytes in data are ASCII (< 128)."""
+    try:
+        data.decode("ascii")
+        return True
+    except UnicodeDecodeError:
+        return False
+
+
 def detect_encoding(raw_bytes: bytes) -> str:
     """
     Detect the encoding of raw bytes using charset-normalizer.
@@ -94,17 +103,40 @@ def read_file_content(file_path: str, max_lines: Optional[int] = None) -> str:
     sample = raw[:_DETECTION_SAMPLE_SIZE]
     encoding = detect_encoding(sample)
 
-    # Decode with the detected encoding, falling back to utf-8 with replacement
+    # Decode with the detected encoding
     try:
         content = raw.decode(encoding)
-    except (UnicodeDecodeError, LookupError):
-        logger.warning(
-            "Failed to decode %s with detected encoding %s, "
-            "falling back to utf-8 with replacement",
-            file_path,
-            encoding,
-        )
-        content = raw.decode("utf-8", errors="replace")
+    except (UnicodeDecodeError, LookupError) as first_err:
+        # Two-pass: if the sample was pure ASCII and decode failed, the real
+        # encoding lives in the bytes beyond the sample.  Re-detect from the
+        # failure region and retry.
+        content = None
+        if isinstance(first_err, UnicodeDecodeError) and _is_pure_ascii(sample):
+            # Re-detect from the failure point onward so the non-ASCII
+            # bytes dominate the sample (including preceding ASCII would
+            # dilute the signal and cause mis-detection).
+            region = raw[first_err.start:]
+            re_encoding = detect_encoding(region)
+            if re_encoding != "utf-8":
+                logger.debug(
+                    "Two-pass re-detection for %s: %s -> %s",
+                    file_path,
+                    encoding,
+                    re_encoding,
+                )
+                try:
+                    content = raw.decode(re_encoding)
+                except (UnicodeDecodeError, LookupError):
+                    pass
+
+        if content is None:
+            logger.warning(
+                "Failed to decode %s with detected encoding %s, "
+                "falling back to utf-8 with replacement",
+                file_path,
+                encoding,
+            )
+            content = raw.decode("utf-8", errors="replace")
 
     if max_lines is not None:
         lines = content.split("\n", max_lines)
@@ -139,6 +171,16 @@ def open_with_detected_encoding(file_path: str) -> Iterator[IO[str]]:
     # Read a sample for binary check + encoding detection
     with open(file_path, "rb") as f:
         sample = f.read(_DETECTION_SAMPLE_SIZE)
+        if _is_pure_ascii(sample):
+            # The real encoding may be beyond the sample.  Scan the rest
+            # for the first non-ASCII byte and detect from there, so the
+            # non-ASCII bytes dominate the detection input.
+            rest = f.read()
+            if rest:
+                for i, byte in enumerate(rest):
+                    if byte >= 128:
+                        sample = rest[i:]
+                        break
 
     if b"\x00" in sample[:8192]:
         raise ValueError(f"File appears to be binary: {file_path}")

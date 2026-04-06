@@ -200,6 +200,45 @@ class TestDelayedNonAscii:
         assert "\u5ef6\u8fdf" in combined
         assert "\ufffd" not in combined
 
+    def test_read_file_with_gbk_after_32kb_ascii(self, tmp_path):
+        """GBK content beyond the 32KB detection sample must be decoded correctly."""
+        f = tmp_path / "delayed_gbk.py"
+        # 2500 lines of "# filler line\n" = ~37.5KB of pure ASCII
+        ascii_prefix = "# filler line\n" * 2500
+        assert len(ascii_prefix.encode("ascii")) > 32 * 1024
+        gbk_tail = "# \u4e2d\u6587\u6ce8\u91ca\uff1a\u8fd9\u662f\u5ef6\u8fdf\u51fa\u73b0\u7684GBK\u5185\u5bb9\n"
+        f.write_bytes(ascii_prefix.encode("ascii") + gbk_tail.encode("gbk"))
+
+        content = read_file_content(str(f))
+        assert "\u4e2d\u6587\u6ce8\u91ca" in content
+        assert "\ufffd" not in content  # no replacement characters
+
+    def test_read_file_with_shift_jis_after_32kb_ascii(self, tmp_path):
+        """Shift-JIS content beyond the 32KB detection sample must be decoded correctly."""
+        f = tmp_path / "delayed_sjis.txt"
+        ascii_prefix = "# filler line\n" * 2500
+        assert len(ascii_prefix.encode("ascii")) > 32 * 1024
+        sjis_tail = "# \u3053\u308c\u306f\u65e5\u672c\u8a9e\u306e\u30c6\u30b9\u30c8\u3067\u3059\n"
+        f.write_bytes(ascii_prefix.encode("ascii") + sjis_tail.encode("shift_jis"))
+
+        content = read_file_content(str(f))
+        assert "\u65e5\u672c\u8a9e" in content
+        assert "\ufffd" not in content
+
+    def test_open_with_detected_encoding_gbk_after_32kb_ascii(self, tmp_path):
+        """Streaming read must handle GBK content beyond the 32KB sample."""
+        f = tmp_path / "delayed_gbk_stream.py"
+        ascii_prefix = "# filler line\n" * 2500
+        assert len(ascii_prefix.encode("ascii")) > 32 * 1024
+        gbk_tail = "# \u4e2d\u6587\u6ce8\u91ca\uff1a\u8fd9\u662f\u5ef6\u8fdf\u51fa\u73b0\u7684GBK\u5185\u5bb9\n"
+        f.write_bytes(ascii_prefix.encode("ascii") + gbk_tail.encode("gbk"))
+
+        with open_with_detected_encoding(str(f)) as fh:
+            lines = fh.readlines()
+        combined = "".join(lines)
+        assert "\u4e2d\u6587\u6ce8\u91ca" in combined
+        assert "\ufffd" not in combined
+
 
 class TestOpenWithDetectedEncoding:
     """Tests for open_with_detected_encoding()."""

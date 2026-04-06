@@ -16,7 +16,7 @@ from typing import Dict, List, Optional, Any, Tuple
 
 from .strategies import StrategyFactory
 from .models import SymbolInfo, FileInfo
-from ..utils.encoding import detect_encoding, open_with_detected_encoding
+from ..utils.encoding import detect_encoding, open_with_detected_encoding, _is_pure_ascii
 
 logger = logging.getLogger(__name__)
 
@@ -135,11 +135,27 @@ class JSONIndexBuilder:
                     return None
 
                 # Detect encoding from a sample and decode
-                encoding = detect_encoding(raw_bytes[:32768])
+                sample = raw_bytes[:32768]
+                encoding = detect_encoding(sample)
                 try:
                     content = raw_bytes.decode(encoding)
-                except (UnicodeDecodeError, LookupError):
-                    content = raw_bytes.decode("utf-8", errors="ignore")
+                except (UnicodeDecodeError, LookupError) as first_err:
+                    # Two-pass: if sample was pure ASCII, re-detect from
+                    # the failure region (real encoding is beyond sample).
+                    content = None
+                    if (
+                        isinstance(first_err, UnicodeDecodeError)
+                        and _is_pure_ascii(sample)
+                    ):
+                        region = raw_bytes[first_err.start:]
+                        re_enc = detect_encoding(region)
+                        if re_enc != "utf-8":
+                            try:
+                                content = raw_bytes.decode(re_enc)
+                            except (UnicodeDecodeError, LookupError):
+                                pass
+                    if content is None:
+                        content = raw_bytes.decode("utf-8", errors="ignore")
 
             # Check line count for lightweight mode (non-lightweight files only)
             if not use_lightweight:
