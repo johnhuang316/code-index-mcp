@@ -252,3 +252,60 @@ class TestWatcherRebuildPreservesExtensions:
         assert mgr.build_index()
         files_after_good_rebuild = mgr.get_file_list()
         assert any(f.endswith(".rsc") for f in files_after_good_rebuild)
+
+
+# --- CLI bootstrap _CLI_CONFIG behavior ---
+
+
+class TestCLIBootstrapExtraExtensions:
+    """Test that main() correctly updates _CLI_CONFIG for extra_extensions."""
+
+    def test_empty_string_flag_sets_empty_list(self):
+        """--extra-extensions '' should set _CLI_CONFIG.extra_extensions to [] (explicit clear)."""
+        from code_index_mcp.server import _CLI_CONFIG, main
+        from unittest.mock import patch
+
+        with patch("code_index_mcp.server.mcp.run"):
+            main(["--extra-extensions", ""])
+
+        assert _CLI_CONFIG.extra_extensions == []
+
+    def test_omitted_flag_sets_none(self):
+        """Omitting --extra-extensions should set _CLI_CONFIG.extra_extensions to None."""
+        from code_index_mcp.server import _CLI_CONFIG, main
+        from unittest.mock import patch
+
+        with patch("code_index_mcp.server.mcp.run"):
+            main([])
+
+        assert _CLI_CONFIG.extra_extensions is None
+
+    def test_no_stale_leak_between_calls(self):
+        """Calling main() without the flag after a call with it must not leak stale values."""
+        from code_index_mcp.server import _CLI_CONFIG, main
+        from unittest.mock import patch
+
+        with patch("code_index_mcp.server.mcp.run"):
+            main(["--extra-extensions", ".rsc,.conf"])
+
+        assert _CLI_CONFIG.extra_extensions == [".rsc", ".conf"]
+
+        with patch("code_index_mcp.server.mcp.run"):
+            main([])
+
+        assert _CLI_CONFIG.extra_extensions is None
+
+    def test_explicit_clear_after_set(self):
+        """main(['--extra-extensions', '']) after main(['--extra-extensions', '.rsc']) should clear."""
+        from code_index_mcp.server import _CLI_CONFIG, main
+        from unittest.mock import patch
+
+        with patch("code_index_mcp.server.mcp.run"):
+            main(["--extra-extensions", ".rsc"])
+
+        assert _CLI_CONFIG.extra_extensions == [".rsc"]
+
+        with patch("code_index_mcp.server.mcp.run"):
+            main(["--extra-extensions", ""])
+
+        assert _CLI_CONFIG.extra_extensions == []

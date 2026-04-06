@@ -517,11 +517,17 @@ def main(argv: list[str] | None = None):
     """Main function to run the MCP server."""
     args = _parse_args(argv)
 
+    # Reset CLI config to prevent stale values leaking between repeated calls.
+    _CLI_CONFIG.project_path = None
+    _CLI_CONFIG.extra_extensions = None
+
     # Store CLI configuration for lifespan bootstrap.
     _CLI_CONFIG.project_path = args.project_path
 
-    # Parse extra extensions from CLI flag
-    if args.extra_extensions:
+    # Parse extra extensions from CLI flag.
+    # Use ``is not None`` to distinguish "not provided" (None) from
+    # "explicitly empty" (""), since both are falsy in Python.
+    if args.extra_extensions is not None:
         from .utils.extensions import normalize_extension
 
         _CLI_CONFIG.extra_extensions = [
