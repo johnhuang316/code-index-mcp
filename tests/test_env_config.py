@@ -325,7 +325,7 @@ class TestLifespanEnvConfigIntegration(unittest.TestCase):
     def test_file_watcher_stopped_when_disabled(
         self, mock_pms_cls, mock_settings_cls
     ):
-        """When FILE_WATCHER_ENABLED=false, the watcher must be stopped after init."""
+        """When FILE_WATCHER_ENABLED=false, the watcher is cleaned up at shutdown."""
         _CLI_CONFIG.project_path = "/tmp/test_project"
         _CLI_CONFIG.file_watcher_enabled = False
         _CLI_CONFIG.additional_exclude_patterns = None
@@ -358,9 +358,9 @@ class TestLifespanEnvConfigIntegration(unittest.TestCase):
 
         asyncio.run(_run())
 
-        # The watcher should have been stopped because enabled=False.
-        # stop_monitoring is called once explicitly after init and once in
-        # the finally cleanup block, so we check it was called at least once.
+        # The watcher is cleaned up in the finally block at shutdown.
+        # With the new fix, _setup_file_monitoring() skips starting when
+        # disabled, so only the finally cleanup calls stop_monitoring.
         watcher_mock.stop_monitoring.assert_called()
 
     @patch("code_index_mcp.server.ProjectSettings")
@@ -383,6 +383,151 @@ class TestLifespanEnvConfigIntegration(unittest.TestCase):
         self.assertIn("ADDITIONAL_EXCLUDE_PATTERNS", log_output)
         # initialize_project should NOT have been called
         mock_pms_cls.assert_not_called()
+
+
+class TestExcludePatternsUsedByIndexing(unittest.TestCase):
+    """Verify _get_exclude_patterns() reads project-level additional_exclude_patterns."""
+
+    def _make_mock_ctx(self, config_data):
+        """Create a mock MCP context whose settings.load_config() returns config_data."""
+        mock_settings = MagicMock()
+        mock_settings.load_config.return_value = config_data
+        mock_settings.get_file_watcher_config.return_value = {
+            "enabled": True,
+            "debounce_seconds": 6.0,
+            "monitored_extensions": [],
+            "observer_type": "auto",
+        }
+        ctx = MagicMock()
+        ctx.request_context.lifespan_context.settings = mock_settings
+        ctx.request_context.lifespan_context.base_path = "/tmp/project"
+        ctx.request_context.lifespan_context.file_count = 0
+        ctx.request_context.lifespan_context.file_watcher_service = None
+        return ctx
+
+    @patch("code_index_mcp.services.project_management_service.get_index_manager")
+    @patch("code_index_mcp.services.project_management_service.get_shallow_index_manager")
+    def test_project_management_reads_project_level_patterns(self, mock_shallow, mock_deep):
+        """Env-configured exclude patterns are returned by _get_exclude_patterns()."""
+        from code_index_mcp.services.project_management_service import ProjectManagementService
+
+        config = {"additional_exclude_patterns": ["vendor", ".cache"]}
+        ctx = self._make_mock_ctx(config)
+        svc = ProjectManagementService(ctx)
+        patterns = svc._get_exclude_patterns()
+        self.assertIn("vendor", patterns)
+        self.assertIn(".cache", patterns)
+
+    @patch("code_index_mcp.services.project_management_service.get_index_manager")
+    @patch("code_index_mcp.services.project_management_service.get_shallow_index_manager")
+    def test_project_management_reads_fw_level_exclude_patterns(self, mock_shallow, mock_deep):
+        """File-watcher-level exclude_patterns are also returned."""
+        from code_index_mcp.services.project_management_service import ProjectManagementService
+
+        config = {"file_watcher": {"exclude_patterns": ["build", "dist"]}}
+        ctx = self._make_mock_ctx(config)
+        svc = ProjectManagementService(ctx)
+        patterns = svc._get_exclude_patterns()
+        self.assertIn("build", patterns)
+        self.assertIn("dist", patterns)
+
+    @patch("code_index_mcp.services.project_management_service.get_index_manager")
+    @patch("code_index_mcp.services.project_management_service.get_shallow_index_manager")
+    def test_project_management_merges_both_pattern_sources(self, mock_shallow, mock_deep):
+        """Both project-level and file-watcher-level patterns are merged."""
+        from code_index_mcp.services.project_management_service import ProjectManagementService
+
+        config = {
+            "additional_exclude_patterns": ["vendor"],
+            "file_watcher": {"exclude_patterns": ["build"]},
+        }
+        ctx = self._make_mock_ctx(config)
+        svc = ProjectManagementService(ctx)
+        patterns = svc._get_exclude_patterns()
+        self.assertIn("vendor", patterns)
+        self.assertIn("build", patterns)
+
+    @patch("code_index_mcp.services.index_management_service.get_index_manager")
+    @patch("code_index_mcp.services.index_management_service.get_shallow_index_manager")
+    @patch("code_index_mcp.services.index_management_service.DeepIndexManager")
+    def test_index_management_reads_project_level_patterns(
+        self, mock_deep_wrapper, mock_shallow, mock_deep
+    ):
+        """IndexManagementService._get_exclude_patterns() reads project-level patterns."""
+        from code_index_mcp.services.index_management_service import IndexManagementService
+
+        config = {"additional_exclude_patterns": ["vendor", ".cache"]}
+        ctx = self._make_mock_ctx(config)
+        svc = IndexManagementService(ctx)
+        patterns = svc._get_exclude_patterns()
+        self.assertIn("vendor", patterns)
+        self.assertIn(".cache", patterns)
+
+
+class TestFileWatcherDisabledPreventsStartup(unittest.TestCase):
+    """Verify FILE_WATCHER_ENABLED=false prevents watcher from starting."""
+
+    @patch("code_index_mcp.services.project_management_service.get_index_manager")
+    @patch("code_index_mcp.services.project_management_service.get_shallow_index_manager")
+    def test_setup_file_monitoring_skips_when_disabled(self, mock_shallow, mock_deep):
+        """_setup_file_monitoring returns 'monitoring_disabled' without calling start_monitoring."""
+        from code_index_mcp.services.project_management_service import ProjectManagementService
+
+        mock_settings = MagicMock()
+        mock_settings.get_file_watcher_config.return_value = {
+            "enabled": False,
+            "debounce_seconds": 6.0,
+            "monitored_extensions": [],
+            "observer_type": "auto",
+        }
+        mock_settings.load_config.return_value = {"file_watcher": {"enabled": False}}
+
+        ctx = MagicMock()
+        ctx.request_context.lifespan_context.settings = mock_settings
+        ctx.request_context.lifespan_context.base_path = "/tmp/project"
+        ctx.request_context.lifespan_context.file_count = 0
+        ctx.request_context.lifespan_context.file_watcher_service = None
+
+        svc = ProjectManagementService(ctx)
+        # Replace watcher tool with a mock so we can verify it's never called
+        mock_watcher_tool = MagicMock()
+        svc._watcher_tool = mock_watcher_tool
+
+        result = svc._setup_file_monitoring("/tmp/project")
+
+        self.assertEqual(result, "monitoring_disabled")
+        # start_monitoring must NOT have been called on the watcher tool
+        mock_watcher_tool.start_monitoring.assert_not_called()
+
+    @patch("code_index_mcp.services.project_management_service.get_index_manager")
+    @patch("code_index_mcp.services.project_management_service.get_shallow_index_manager")
+    def test_setup_file_monitoring_proceeds_when_enabled(self, mock_shallow, mock_deep):
+        """_setup_file_monitoring proceeds normally when enabled=True."""
+        from code_index_mcp.services.project_management_service import ProjectManagementService
+
+        mock_settings = MagicMock()
+        mock_settings.get_file_watcher_config.return_value = {
+            "enabled": True,
+            "debounce_seconds": 6.0,
+            "monitored_extensions": [],
+            "observer_type": "auto",
+        }
+        mock_settings.load_config.return_value = {"file_watcher": {"enabled": True}}
+
+        ctx = MagicMock()
+        ctx.request_context.lifespan_context.settings = mock_settings
+        ctx.request_context.lifespan_context.base_path = "/tmp/project"
+        ctx.request_context.lifespan_context.file_count = 0
+        ctx.request_context.lifespan_context.file_watcher_service = None
+
+        svc = ProjectManagementService(ctx)
+        # Mock the watcher tool to return success
+        svc._watcher_tool = MagicMock()
+        svc._watcher_tool.start_monitoring.return_value = True
+        result = svc._setup_file_monitoring("/tmp/project")
+
+        self.assertEqual(result, "monitoring_active")
+        svc._watcher_tool.start_monitoring.assert_called_once()
 
 
 if __name__ == "__main__":

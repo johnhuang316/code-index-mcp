@@ -279,11 +279,8 @@ async def indexer_lifespan(_server: FastMCP) -> AsyncIterator[CodeIndexerContext
                     f"Failed to initialize project path '{_CLI_CONFIG.project_path}'"
                 ) from exc
 
-            # If file watcher was explicitly disabled, ensure it is stopped
-            # (initialize_project starts it unconditionally).
-            if _CLI_CONFIG.file_watcher_enabled is False and context.file_watcher_service:
-                context.file_watcher_service.stop_monitoring()
-                logger.info("Stopped file watcher because FILE_WATCHER_ENABLED=false")
+            # No post-hoc stop needed: _setup_file_monitoring() now checks
+            # the enabled flag and skips startup when disabled.
         else:
             # Warn when env vars are set but PROJECT_PATH is missing.
             if _CLI_CONFIG.file_watcher_enabled is not None:

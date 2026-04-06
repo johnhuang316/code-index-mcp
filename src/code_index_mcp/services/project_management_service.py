@@ -57,6 +57,9 @@ class ProjectManagementService(BaseService):
     def _get_exclude_patterns(self) -> List[str]:
         """Read exclude patterns from project settings for indexing.
 
+        Reads project-level ``additional_exclude_patterns`` (set via env var
+        or the configure API) as well as file-watcher-level ``exclude_patterns``.
+
         Returns:
             List of directory/file patterns to exclude from indexing
         """
@@ -64,11 +67,16 @@ class ProjectManagementService(BaseService):
         if not self.settings:
             return patterns
         try:
-            config = self.settings.get_file_watcher_config()
-            for key in ('exclude_patterns', 'additional_exclude_patterns'):
-                for pattern in config.get(key) or []:
-                    if isinstance(pattern, str) and pattern.strip():
-                        patterns.append(pattern.strip())
+            config = self.settings.load_config()
+            # Project-level additional_exclude_patterns (set by env var / API)
+            for p in config.get('additional_exclude_patterns') or []:
+                if isinstance(p, str) and p.strip():
+                    patterns.append(p.strip())
+            # File-watcher-level exclude_patterns (built-in defaults)
+            fw = config.get('file_watcher', {})
+            for p in fw.get('exclude_patterns') or []:
+                if isinstance(p, str) and p.strip():
+                    patterns.append(p.strip())
         except Exception:  # noqa: BLE001 - fallback if config fails
             pass
         return patterns
@@ -270,6 +278,12 @@ class ProjectManagementService(BaseService):
             String describing monitoring setup result
         """
 
+        # Respect the file watcher enabled setting
+        if self.settings:
+            fw_config = self.settings.get_file_watcher_config()
+            if not fw_config.get('enabled', True):
+                logger.info("File watcher disabled by configuration")
+                return "monitoring_disabled"
 
         try:
             # Create rebuild callback that uses the deep index manager
