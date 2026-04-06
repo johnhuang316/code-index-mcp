@@ -35,5 +35,18 @@ class TestEncodingConfig(unittest.TestCase):
         self.assertIsNone(config["default_encoding"])
 
 
+class TestSetProjectPathEncoding(unittest.TestCase):
+    def test_default_encoding_persisted_via_initialize_project(self):
+        """initialize_project with default_encoding stores it in settings."""
+        tmp_dir = tempfile.mkdtemp()
+        try:
+            settings = ProjectSettings(tmp_dir)
+            settings.update_encoding_config({"default_encoding": "gbk"})
+            config = settings.get_encoding_config()
+            self.assertEqual(config["default_encoding"], "gbk")
+        finally:
+            shutil.rmtree(tmp_dir)
+
+
 if __name__ == "__main__":
     unittest.main()

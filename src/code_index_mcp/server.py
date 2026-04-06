@@ -272,9 +272,23 @@ def get_file_content(file_path: str) -> str:
 
 @mcp.tool()
 @handle_mcp_tool_errors(return_type="str")
-def set_project_path(path: str, ctx: Context) -> str:
-    """Set the base project path for indexing."""
-    return ProjectManagementService(ctx).initialize_project(path)
+def set_project_path(
+    path: str,
+    ctx: Context,
+    default_encoding: str | None = None,
+) -> str:
+    """Set the base project path for indexing.
+
+    Args:
+        path: Project directory path to index.
+        default_encoding: Optional default file encoding for this project
+            (e.g., 'gbk', 'shift_jis', 'euc-kr'). When set, all file reads
+            will use this encoding instead of auto-detection. Omit to use
+            automatic encoding detection.
+    """
+    return ProjectManagementService(ctx).initialize_project(
+        path, default_encoding=default_encoding
+    )
 
 
 @mcp.tool()
