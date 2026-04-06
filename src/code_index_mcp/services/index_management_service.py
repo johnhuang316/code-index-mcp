@@ -193,12 +193,26 @@ class IndexManagementService(BaseService):
         rebuild_time = time.time() - start_time
 
         if not rebuild_ok:
-            return IndexRebuildResult(
-                file_count=file_count,
-                rebuild_time=rebuild_time,
-                status='partial',
-                message=f"Deep index built (partial: {file_count} files processed due to timeout)"
-            )
+            # Distinguish timeout from other failures using stored build stats
+            build_stats = getattr(self._index_manager, '_last_build_stats', {})
+            if build_stats.get('timed_out'):
+                total = build_stats.get('total_files', '?')
+                return IndexRebuildResult(
+                    file_count=file_count,
+                    rebuild_time=rebuild_time,
+                    status='partial',
+                    message=(
+                        f"Deep index build timed out. "
+                        f"Partial results: {file_count} of {total} files processed."
+                    ),
+                )
+            else:
+                return IndexRebuildResult(
+                    file_count=file_count,
+                    rebuild_time=rebuild_time,
+                    status='error',
+                    message="Deep index build failed. Check logs for details.",
+                )
 
         return IndexRebuildResult(
             file_count=file_count,
@@ -218,7 +232,10 @@ class IndexManagementService(BaseService):
         Returns:
             Formatted result string for MCP response
         """
-        return f"Project re-indexed. Found {result.file_count} files."
+        if result.status == 'success':
+            return f"Project re-indexed. Found {result.file_count} files."
+        # For 'partial' (timeout) and 'error' statuses, use the descriptive message
+        return result.message
 
     def build_shallow_index(self) -> str:
         """

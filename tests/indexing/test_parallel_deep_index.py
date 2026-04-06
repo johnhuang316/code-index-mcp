@@ -431,6 +431,7 @@ class TestPartialBuildMessage:
         mock_mgr.set_project_path.return_value = True
         # refresh_index returns False when timed out
         mock_mgr.refresh_index.return_value = False
+        mock_mgr._last_build_stats = {"timed_out": True, "files": 3, "total_files": 10}
         mock_mgr.get_index_stats.return_value = {
             "indexed_files": 3,
             "total_symbols": 10,
@@ -442,3 +443,117 @@ class TestPartialBuildMessage:
         assert result.status == "partial"
         assert "partial" in result.message.lower()
         assert "3" in result.message
+
+    def test_non_timeout_failure_produces_error_status(self, tmp_path):
+        """When refresh_index returns False without timeout, status should be 'error'."""
+        from code_index_mcp.services.index_management_service import IndexManagementService
+
+        project_dir = tmp_path / "proj"
+        project_dir.mkdir()
+
+        service = IndexManagementService.__new__(IndexManagementService)
+
+        mock_helper = MagicMock()
+        mock_helper.base_path = str(project_dir)
+        mock_helper.settings.get_indexing_config.return_value = {}
+        mock_helper.settings.get_file_watcher_config.return_value = {}
+        service.helper = mock_helper
+
+        mock_mgr = MagicMock()
+        mock_mgr.set_project_path.return_value = True
+        # refresh_index returns False for non-timeout reasons (e.g. load_index failed)
+        mock_mgr.refresh_index.return_value = False
+        mock_mgr._last_build_stats = {"timed_out": False, "files": 0, "total_files": 5}
+        mock_mgr.get_index_stats.return_value = {"indexed_files": 0}
+        service._index_manager = mock_mgr
+        service._shallow_manager = MagicMock()
+
+        result = service._execute_rebuild_workflow()
+        assert result.status == "error"
+        assert "failed" in result.message.lower()
+
+
+# ---------------------------------------------------------------------------
+# User-visible rebuild_deep_index() output tests
+# ---------------------------------------------------------------------------
+
+
+class TestRebuildDeepIndexUserOutput:
+    """Tests that rebuild_deep_index() returns correct user-visible strings."""
+
+    def _make_service(self, tmp_path, refresh_return, last_build_stats, index_stats):
+        from code_index_mcp.services.index_management_service import IndexManagementService
+
+        project_dir = tmp_path / "proj"
+        project_dir.mkdir()
+
+        service = IndexManagementService.__new__(IndexManagementService)
+
+        mock_helper = MagicMock()
+        mock_helper.base_path = str(project_dir)
+        mock_helper.get_base_path_error.return_value = None
+        mock_helper.settings.get_indexing_config.return_value = {}
+        mock_helper.settings.get_file_watcher_config.return_value = {}
+        service.helper = mock_helper
+
+        mock_mgr = MagicMock()
+        mock_mgr.set_project_path.return_value = True
+        mock_mgr.refresh_index.return_value = refresh_return
+        mock_mgr._last_build_stats = last_build_stats
+        mock_mgr.get_index_stats.return_value = index_stats
+        service._index_manager = mock_mgr
+        service._shallow_manager = MagicMock()
+
+        return service
+
+    def test_success_message(self, tmp_path):
+        """Successful rebuild returns 're-indexed' message with file count."""
+        service = self._make_service(
+            tmp_path,
+            refresh_return=True,
+            last_build_stats={"timed_out": False, "files": 42, "total_files": 42},
+            index_stats={"indexed_files": 42},
+        )
+        msg = service.rebuild_deep_index()
+        assert "re-indexed" in msg.lower()
+        assert "42" in msg
+
+    def test_timeout_partial_message(self, tmp_path):
+        """Timed-out rebuild returns partial/timeout message, NOT success."""
+        service = self._make_service(
+            tmp_path,
+            refresh_return=False,
+            last_build_stats={"timed_out": True, "files": 10, "total_files": 50},
+            index_stats={"indexed_files": 10},
+        )
+        msg = service.rebuild_deep_index()
+        assert "timed out" in msg.lower() or "partial" in msg.lower()
+        assert "10" in msg
+        # Must NOT look like a normal success
+        assert "re-indexed" not in msg.lower()
+
+    def test_non_timeout_failure_message(self, tmp_path):
+        """Non-timeout failure returns error/failed message, NOT success."""
+        service = self._make_service(
+            tmp_path,
+            refresh_return=False,
+            last_build_stats={},  # no timed_out key means not a timeout
+            index_stats={"indexed_files": 0},
+        )
+        msg = service.rebuild_deep_index()
+        assert "failed" in msg.lower() or "error" in msg.lower()
+        # Must NOT look like a normal success or timeout
+        assert "re-indexed" not in msg.lower()
+        assert "timed out" not in msg.lower()
+
+    def test_non_timeout_failure_with_explicit_false(self, tmp_path):
+        """Non-timeout failure (timed_out=False) returns error message."""
+        service = self._make_service(
+            tmp_path,
+            refresh_return=False,
+            last_build_stats={"timed_out": False, "files": 0, "total_files": 5},
+            index_stats={"indexed_files": 0},
+        )
+        msg = service.rebuild_deep_index()
+        assert "failed" in msg.lower() or "error" in msg.lower()
+        assert "re-indexed" not in msg.lower()

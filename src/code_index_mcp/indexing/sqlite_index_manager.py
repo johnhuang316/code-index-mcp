@@ -32,6 +32,7 @@ class SQLiteIndexManager:
         self.shallow_index_path: Optional[str] = None
         self._shallow_file_list: Optional[List[str]] = None
         self._is_loaded = False
+        self._last_build_stats: Dict[str, Any] = {}
         self._lock = threading.RLock()
         logger.info("Initialized SQLite Index Manager")
 
@@ -112,8 +113,11 @@ class SQLiteIndexManager:
                 )
             except Exception as exc:  # pragma: no cover - defensive
                 logger.error("Failed to build SQLite index: %s", exc)
+                self._last_build_stats = {}
                 self._is_loaded = False
                 return False
+
+            self._last_build_stats = dict(stats)
 
             logger.info(
                 "SQLite index build complete: %s files, %s symbols",
