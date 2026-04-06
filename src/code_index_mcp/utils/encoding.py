@@ -85,8 +85,13 @@ def read_file_content(
         file_path: Absolute path to the file to read.
         max_lines: If set, return only the first N lines.
         encoding: If provided, use this encoding directly instead of
-            auto-detecting.  Errors with an explicit encoding are raised
-            (no silent fallback).
+            auto-detecting.  Decode errors with an explicit encoding are
+            **raised** (``UnicodeDecodeError``) rather than silently
+            replaced, because the entire file is available in memory and
+            the caller can catch and handle the error cleanly.  This
+            contrasts with :func:`open_with_detected_encoding`, which
+            uses ``errors='replace'`` even for explicit encodings because
+            a streaming reader cannot recover mid-stream.
 
     Returns:
         Decoded file content as a string.
@@ -183,7 +188,13 @@ def open_with_detected_encoding(
     Args:
         file_path: Absolute path to the file.
         encoding: If provided, use this encoding directly instead of
-            auto-detecting.
+            auto-detecting.  The file is still opened with
+            ``errors='replace'`` because a streaming reader cannot
+            rewind and retry on a mid-stream decode error.  This
+            differs from :func:`read_file_content`, which raises
+            ``UnicodeDecodeError`` for explicit encodings because
+            the full content is in memory and the caller can handle
+            the error cleanly.
 
     Yields:
         A text-mode file object using the detected (or explicit) encoding
@@ -197,7 +208,13 @@ def open_with_detected_encoding(
         raise FileNotFoundError(f"File not found: {file_path}")
 
     if encoding is not None:
-        # Explicit encoding: skip sample read / detection entirely
+        # Explicit encoding: skip sample read / detection, but still
+        # reject binary files (NUL byte in first 8 KB).
+        with open(file_path, "rb") as f:
+            head = f.read(8192)
+        if b"\x00" in head:
+            raise ValueError(f"File appears to be binary: {file_path}")
+
         fh = open(file_path, "r", encoding=encoding, errors="replace")
         try:
             yield fh

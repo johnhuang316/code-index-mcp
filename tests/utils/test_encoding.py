@@ -356,3 +356,23 @@ class TestOpenWithDetectedEncodingOverride(unittest.TestCase):
             content = fh.read()
         self.assertIn("\u4f7f\u7528GBK", content)
         self.assertIn("\u6d4b\u8bd5\u6587\u4ef6", content)
+
+    def test_explicit_encoding_skips_detection_streaming(self):
+        """When an explicit encoding is provided, charset-normalizer must not be called."""
+        path = os.path.join(self.tmp_dir, "skip_detect_stream.txt")
+        with open(path, "wb") as f:
+            f.write(b"hello world\n")
+        with patch("code_index_mcp.utils.encoding.from_bytes") as mock_from_bytes:
+            with open_with_detected_encoding(path, encoding="utf-8") as fh:
+                content = fh.read()
+        mock_from_bytes.assert_not_called()
+        self.assertIn("hello", content)
+
+    def test_explicit_encoding_rejects_binary(self):
+        """Binary files must be rejected even when an explicit encoding is given."""
+        path = os.path.join(self.tmp_dir, "binary_explicit.bin")
+        with open(path, "wb") as f:
+            f.write(b"\x00\x01\x02\x03binary content")
+        with self.assertRaises(ValueError, msg="binary"):
+            with open_with_detected_encoding(path, encoding="utf-8") as fh:
+                pass
