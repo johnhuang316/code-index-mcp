@@ -5,7 +5,7 @@ This service handles the business logic for project initialization, configuratio
 and lifecycle management across the current indexing backends.
 """
 import logging
-from typing import Dict, Any, List
+from typing import Dict, Any
 from dataclasses import dataclass
 from contextlib import contextmanager
 
@@ -54,38 +54,6 @@ class ProjectManagementService(BaseService):
     def _noop_operation(self, *_args, **_kwargs):
         yield
 
-    def _get_exclude_patterns(self) -> List[str]:
-        """Read exclude patterns from project settings for indexing.
-
-        Returns:
-            List of directory/file patterns to exclude from indexing
-        """
-        patterns: List[str] = []
-        if not self.settings:
-            return patterns
-        try:
-            config = self.settings.get_file_watcher_config()
-            for key in ('exclude_patterns', 'additional_exclude_patterns'):
-                for pattern in config.get(key) or []:
-                    if isinstance(pattern, str) and pattern.strip():
-                        patterns.append(pattern.strip())
-        except Exception:  # noqa: BLE001 - fallback if config fails
-            pass
-        return patterns
-
-    def _get_extra_extensions(self) -> List[str]:
-        """Read extra file extensions from project settings and environment.
-
-        Returns:
-            List of additional file extensions to include in indexing
-        """
-        if not self.settings:
-            return []
-        try:
-            return self.settings.get_extra_extensions()
-        except Exception:  # noqa: BLE001 - fallback if config fails
-            return []
-
     def initialize_project(self, path: str, extra_extensions: list[str] | None = None) -> str:
         """
         Initialize a project with comprehensive business logic.
@@ -107,11 +75,8 @@ class ProjectManagementService(BaseService):
         # Business validation
         self._validate_initialization_request(path)
 
-        # Store extra extensions in project config if provided
-        self._extra_extensions = extra_extensions
-
         # Business workflow: Execute initialization
-        result = self._execute_initialization_workflow(path)
+        result = self._execute_initialization_workflow(path, extra_extensions=extra_extensions)
 
         # Business result formatting
         return self._format_initialization_result(result)
@@ -131,12 +96,13 @@ class ProjectManagementService(BaseService):
         if error:
             raise ValueError(error)
 
-    def _execute_initialization_workflow(self, path: str) -> ProjectInitializationResult:
+    def _execute_initialization_workflow(self, path: str, extra_extensions: list[str] | None = None) -> ProjectInitializationResult:
         """
         Execute the core project initialization business workflow.
 
         Args:
             path: Project path to initialize
+            extra_extensions: Optional list of additional file extensions to index
 
         Returns:
             ProjectInitializationResult with initialization data
@@ -148,9 +114,8 @@ class ProjectManagementService(BaseService):
         normalized_path = self._config_tool.normalize_project_path(path)
 
         # Persist extra extensions if provided via tool parameter
-        extra_exts = getattr(self, '_extra_extensions', None)
-        if extra_exts and self.settings:
-            self.settings.update_extra_extensions(extra_exts)
+        if extra_extensions and self.settings:
+            self.settings.update_extra_extensions(extra_extensions)
 
         # Business step 2: Cleanup existing project state
         self._cleanup_existing_project()

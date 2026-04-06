@@ -6,7 +6,7 @@ ensuring consistent behavior and shared functionality across the service layer.
 """
 
 from abc import ABC
-from typing import Optional
+from typing import List, Optional
 from mcp.server.fastmcp import Context
 
 from ..utils import ContextHelper, ValidationHelper
@@ -116,6 +116,38 @@ class BaseService(ABC):
             The number of indexed files
         """
         return self.helper.file_count
+
+    def _get_exclude_patterns(self) -> List[str]:
+        """Read exclude patterns from project settings for indexing.
+
+        Returns:
+            List of directory/file patterns to exclude from indexing
+        """
+        patterns: List[str] = []
+        if not self.settings:
+            return patterns
+        try:
+            config = self.settings.get_file_watcher_config()
+            for key in ('exclude_patterns', 'additional_exclude_patterns'):
+                for pattern in config.get(key) or []:
+                    if isinstance(pattern, str) and pattern.strip():
+                        patterns.append(pattern.strip())
+        except Exception:  # noqa: BLE001 - fallback if config fails
+            pass
+        return patterns
+
+    def _get_extra_extensions(self) -> List[str]:
+        """Read extra file extensions from project settings and environment.
+
+        Returns:
+            List of additional file extensions to include in indexing
+        """
+        if not self.settings:
+            return []
+        try:
+            return self.settings.get_extra_extensions()
+        except Exception:  # noqa: BLE001 - fallback if config fails
+            return []
 
     @property
     def index_provider(self):

@@ -563,13 +563,12 @@ class ProjectSettings:
         Args:
             extensions: List of file extensions to add
         """
-        normalized = []
-        for ext in extensions:
-            ext = ext.strip().lower()
-            if ext and not ext.startswith('.'):
-                ext = '.' + ext
-            if ext:
-                normalized.append(ext)
+        from .utils.extensions import normalize_extension
+
+        normalized = [
+            norm for ext in extensions
+            if (norm := normalize_extension(ext))
+        ]
         config = self.load_config()
         config["extra_extensions"] = normalized
         self.save_config(config)
@@ -593,14 +592,14 @@ class ProjectSettings:
             extensions.extend(config_exts)
 
         # From environment variable
+        from .utils.extensions import normalize_extension
+
         env_val = os.environ.get("EXTRA_EXTENSIONS", "")
         if env_val:
-            for ext in env_val.split(","):
-                ext = ext.strip().lower()
-                if ext and not ext.startswith('.'):
-                    ext = '.' + ext
-                if ext:
-                    extensions.append(ext)
+            for raw in env_val.split(","):
+                norm = normalize_extension(raw)
+                if norm:
+                    extensions.append(norm)
 
         # Deduplicate while preserving order
         seen: set[str] = set()

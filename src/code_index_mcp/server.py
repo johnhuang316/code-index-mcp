@@ -522,8 +522,11 @@ def main(argv: list[str] | None = None):
 
     # Parse extra extensions from CLI flag
     if args.extra_extensions:
+        from .utils.extensions import normalize_extension
+
         _CLI_CONFIG.extra_extensions = [
-            ext.strip() for ext in args.extra_extensions.split(",") if ext.strip()
+            norm for raw in args.extra_extensions.split(",")
+            if (norm := normalize_extension(raw))
         ]
 
     # Configure custom index root if provided

@@ -31,14 +31,14 @@ class FileFilter:
         if additional_excludes:
             self.exclude_dirs.update(additional_excludes)
 
-        # Add user-defined extra extensions
+        # Add user-defined extra extensions (assumed already normalized at entry boundary)
         if extra_extensions:
+            from .extensions import normalize_extension
+
             for ext in extra_extensions:
-                ext = ext.strip().lower()
-                if ext and not ext.startswith('.'):
-                    ext = '.' + ext
-                if ext:
-                    self.supported_extensions.add(ext)
+                norm = normalize_extension(ext)
+                if norm:
+                    self.supported_extensions.add(norm)
     
     def should_exclude_directory(self, dir_name: str) -> bool:
         """

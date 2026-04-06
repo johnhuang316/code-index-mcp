@@ -338,11 +338,13 @@ class FileWatcherService(BaseService):
 
     def _create_event_handler(self, debounce_seconds: float) -> "DebounceEventHandler":
         """Create a fresh debounce handler for the current watcher configuration."""
+        extra_exts = self._get_extra_extensions()
         return DebounceEventHandler(
             debounce_seconds=debounce_seconds,
             rebuild_callback=self.rebuild_callback,
             base_path=Path(self.base_path),
             logger=self.logger,
+            extra_extensions=extra_exts or None,
         )
 
     def get_status(self) -> dict:
@@ -385,7 +387,9 @@ class DebounceEventHandler(FileSystemEventHandler):
     """
 
     def __init__(self, debounce_seconds: float, rebuild_callback: Callable,
-                 base_path: Path, logger: logging.Logger, additional_excludes: Optional[List[str]] = None):
+                 base_path: Path, logger: logging.Logger,
+                 additional_excludes: Optional[List[str]] = None,
+                 extra_extensions: Optional[List[str]] = None):
         """
         Initialize the debounce event handler.
 
@@ -395,9 +399,10 @@ class DebounceEventHandler(FileSystemEventHandler):
             base_path: Base project path for filtering
             logger: Logger instance for debug messages
             additional_excludes: Additional patterns to exclude
+            extra_extensions: Additional file extensions to monitor
         """
         from ..utils import FileFilter
-        
+
         super().__init__()
         self.debounce_seconds = debounce_seconds
         self.rebuild_callback = rebuild_callback
@@ -410,8 +415,8 @@ class DebounceEventHandler(FileSystemEventHandler):
         self._stopped = False
         self._inflight_callbacks = 0
 
-        # Use centralized file filtering
-        self.file_filter = FileFilter(additional_excludes)
+        # Use centralized file filtering with extra extensions
+        self.file_filter = FileFilter(additional_excludes, extra_extensions=extra_extensions)
 
     def on_any_event(self, event: FileSystemEvent) -> None:
         """
