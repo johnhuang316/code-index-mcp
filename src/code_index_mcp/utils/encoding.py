@@ -24,6 +24,12 @@ logger = logging.getLogger(__name__)
 # Sample size for encoding detection (32 KB is enough for reliable detection)
 _DETECTION_SAMPLE_SIZE = 32 * 1024
 
+# Capped chunked scan: when the initial sample is pure ASCII, scan forward
+# in fixed-size chunks to find the first non-ASCII byte.  This avoids reading
+# the entire file into memory while still detecting delayed non-UTF-8 content.
+_MAX_ASCII_SCAN_BYTES = 8 * 1024 * 1024  # 8 MB cap for scanning past ASCII prefix
+_SCAN_CHUNK_SIZE = 64 * 1024  # 64 KB chunks for the forward scan
+
 
 def _is_pure_ascii(data: bytes) -> bool:
     """Check if all bytes in data are ASCII (< 128)."""
@@ -151,25 +157,12 @@ def open_with_detected_encoding(file_path: str) -> Iterator[IO[str]]:
     """
     Open a file with automatically detected encoding for streaming reads.
 
-    Reads a 32 KB sample to detect encoding, checks for binary content,
-    then returns a text-mode file object opened with the detected encoding
-    and ``errors='replace'``.  The caller can iterate line-by-line without
-    loading the whole file into memory.
-
-    Design note -- streaming vs full detection
-    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    Unlike :func:`read_file_content` (which performs two-pass detection and
-    can handle non-UTF-8 bytes that appear *after* the 32 KB sample), this
-    function detects encoding from the first 32 KB **only**.  If the sample
-    is pure ASCII the file is opened as UTF-8 (a superset of ASCII).
-
-    This means files whose first 32 KB are ASCII but whose later content
-    uses a different codec (e.g. GBK) will have the later bytes decoded
-    with replacement characters.  This is an intentional performance
-    tradeoff: scanning the entire file to locate the first non-ASCII byte
-    would negate the benefit of streaming.  In practice such files are
-    extremely rare, and consumers that need full correctness should use
-    :func:`read_file_content` instead.
+    Reads a 32KB sample to detect encoding and checks for binary content.
+    When the sample is pure ASCII, performs a capped chunked scan (up to
+    8 MB beyond the sample) to find the first non-ASCII byte and re-detect
+    encoding from that region.  This avoids reading the entire file into
+    memory while still correctly handling files whose non-UTF-8 content
+    appears after a long ASCII prefix.
 
     Args:
         file_path: Absolute path to the file.
@@ -188,8 +181,35 @@ def open_with_detected_encoding(file_path: str) -> Iterator[IO[str]]:
     with open(file_path, "rb") as f:
         sample = f.read(_DETECTION_SAMPLE_SIZE)
 
-    if b"\x00" in sample[:8192]:
-        raise ValueError(f"File appears to be binary: {file_path}")
+        if b"\x00" in sample[:8192]:
+            raise ValueError(f"File appears to be binary: {file_path}")
+
+        if _is_pure_ascii(sample):
+            # The real encoding may live beyond the sample.  Scan forward
+            # in fixed-size chunks (capped at _MAX_ASCII_SCAN_BYTES) to
+            # find the first non-ASCII byte.  If found, read a detection-
+            # sized sample starting from that byte so the non-ASCII bytes
+            # dominate the input to charset-normalizer.
+            scanned = 0
+            detection_sample = None
+            while scanned < _MAX_ASCII_SCAN_BYTES:
+                chunk = f.read(_SCAN_CHUNK_SIZE)
+                if not chunk:
+                    break
+                for i, byte in enumerate(chunk):
+                    if byte >= 128:
+                        # Seek to the non-ASCII position and read a
+                        # detection-sized sample from there.
+                        offset = f.tell() - len(chunk) + i
+                        f.seek(offset)
+                        detection_sample = f.read(_DETECTION_SAMPLE_SIZE)
+                        break
+                if detection_sample is not None:
+                    break
+                scanned += len(chunk)
+
+            if detection_sample is not None:
+                sample = detection_sample
 
     encoding = detect_encoding(sample)
 
