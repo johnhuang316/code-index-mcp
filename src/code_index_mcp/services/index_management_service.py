@@ -131,9 +131,32 @@ class IndexManagementService(BaseService):
             pass
         return patterns
 
-    def _execute_rebuild_workflow(self) -> IndexRebuildResult:
+    def _get_indexing_config(self) -> dict:
+        """Read indexing configuration from project settings.
+
+        Returns:
+            Dictionary with indexing config (max_workers, parallel, timeout_seconds).
+        """
+        if not self.settings:
+            return {}
+        try:
+            return self.settings.get_indexing_config()
+        except Exception:  # noqa: BLE001
+            return {}
+
+    def _execute_rebuild_workflow(
+        self,
+        max_workers: int | None = None,
+        timeout: int | None = None,
+    ) -> IndexRebuildResult:
         """
         Execute the core index rebuild business workflow.
+
+        Args:
+            max_workers: Maximum number of parallel workers.
+                When None, falls back to settings then auto-detect.
+            timeout: Parallel build timeout in seconds.
+                When None, falls back to settings then auto-scale.
 
         Returns:
             IndexRebuildResult with rebuild data
@@ -143,12 +166,20 @@ class IndexManagementService(BaseService):
         # Get user-configured exclude patterns
         excludes = self._get_exclude_patterns()
 
+        # Merge explicit params with persistent settings
+        indexing_cfg = self._get_indexing_config()
+        effective_workers = max_workers if max_workers is not None else indexing_cfg.get("max_workers")
+        effective_timeout = timeout if timeout is not None else indexing_cfg.get("timeout_seconds")
+
         # Set project path in index manager with exclusions
         if not self._index_manager.set_project_path(self.base_path, excludes):
             raise RuntimeError("Failed to set project path in index manager")
 
         # Rebuild the index
-        if not self._index_manager.refresh_index():
+        if not self._index_manager.refresh_index(
+            max_workers=effective_workers,
+            timeout=effective_timeout,
+        ):
             raise RuntimeError("Failed to rebuild index")
 
         # Get stats for result
@@ -215,11 +246,25 @@ class IndexManagementService(BaseService):
 
         return f"Shallow index built{f' with {count} files' if count else ''}."
 
-    def rebuild_deep_index(self) -> str:
-        """Rebuild the deep index using the original workflow."""
+    def rebuild_deep_index(
+        self,
+        max_workers: int | None = None,
+        timeout: int | None = None,
+    ) -> str:
+        """Rebuild the deep index using the original workflow.
+
+        Args:
+            max_workers: Maximum number of parallel workers.
+                When None, falls back to settings then auto-detect.
+            timeout: Parallel build timeout in seconds.
+                When None, falls back to settings then auto-scale.
+        """
         # Business validation
         self._validate_rebuild_request()
 
         # Deep rebuild via existing workflow
-        result = self._execute_rebuild_workflow()
+        result = self._execute_rebuild_workflow(
+            max_workers=max_workers,
+            timeout=timeout,
+        )
         return self._format_rebuild_result(result)

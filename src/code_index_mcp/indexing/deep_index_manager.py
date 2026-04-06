@@ -22,14 +22,30 @@ class DeepIndexManager:
     def set_project_path(self, project_path: str) -> bool:
         return self._mgr.set_project_path(project_path)
 
-    def build_index(self, force_rebuild: bool = False) -> bool:
-        return self._mgr.build_index(force_rebuild=force_rebuild)
+    def build_index(
+        self,
+        force_rebuild: bool = False,
+        max_workers: Optional[int] = None,
+        timeout: Optional[int] = None,
+    ) -> bool:
+        return self._mgr.build_index(
+            force_rebuild=force_rebuild,
+            max_workers=max_workers,
+            timeout=timeout,
+        )
 
     def load_index(self) -> bool:
         return self._mgr.load_index()
 
-    def refresh_index(self) -> bool:
-        return self._mgr.refresh_index()
+    def refresh_index(
+        self,
+        max_workers: Optional[int] = None,
+        timeout: Optional[int] = None,
+    ) -> bool:
+        return self._mgr.refresh_index(
+            max_workers=max_workers,
+            timeout=timeout,
+        )
 
     def find_files(self, pattern: str = "*") -> List[str]:
         return self._mgr.find_files(pattern)

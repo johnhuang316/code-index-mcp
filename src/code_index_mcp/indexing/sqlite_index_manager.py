@@ -79,14 +79,30 @@ class SQLiteIndexManager:
                 logger.info("Additional excludes: %s", additional_excludes)
             return True
 
-    def build_index(self, force_rebuild: bool = False) -> bool:
-        """Build or rebuild the SQLite index."""
+    def build_index(
+        self,
+        force_rebuild: bool = False,
+        max_workers: Optional[int] = None,
+        timeout: Optional[int] = None,
+    ) -> bool:
+        """Build or rebuild the SQLite index.
+
+        Args:
+            force_rebuild: Whether to force a full rebuild.
+            max_workers: Maximum number of parallel workers.
+                When None, defaults to min(4, cpu_count).
+            timeout: Parallel build timeout in seconds.
+                When None, scales dynamically with file count.
+        """
         with self._lock:
             if not self.index_builder:
                 logger.error("Index builder not initialized")
                 return False
             try:
-                stats = self.index_builder.build_index()
+                stats = self.index_builder.build_index(
+                    max_workers=max_workers,
+                    timeout=timeout,
+                )
                 logger.info(
                     "SQLite index build complete: %s files, %s symbols",
                     stats.get("files"),
@@ -97,7 +113,10 @@ class SQLiteIndexManager:
             except SQLiteSchemaMismatchError:
                 logger.warning("Schema mismatch detected; recreating database")
                 self.store.clear()  # type: ignore[union-attr]
-                stats = self.index_builder.build_index()
+                stats = self.index_builder.build_index(
+                    max_workers=max_workers,
+                    timeout=timeout,
+                )
                 logger.info(
                     "SQLite index rebuild after schema reset: %s files, %s symbols",
                     stats.get("files"),
@@ -131,11 +150,24 @@ class SQLiteIndexManager:
             self._is_loaded = metadata is not None
             return self._is_loaded
 
-    def refresh_index(self) -> bool:
-        """Force rebuild of the SQLite index."""
+    def refresh_index(
+        self,
+        max_workers: Optional[int] = None,
+        timeout: Optional[int] = None,
+    ) -> bool:
+        """Force rebuild of the SQLite index.
+
+        Args:
+            max_workers: Maximum number of parallel workers.
+            timeout: Parallel build timeout in seconds.
+        """
         with self._lock:
             logger.info("Refreshing SQLite deep index...")
-            if self.build_index(force_rebuild=True):
+            if self.build_index(
+                force_rebuild=True,
+                max_workers=max_workers,
+                timeout=timeout,
+            ):
                 return self.load_index()
             return False
 

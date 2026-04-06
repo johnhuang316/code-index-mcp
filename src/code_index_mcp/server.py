@@ -373,13 +373,30 @@ Manually rebuild the project file index. Use after git operations or when index 
 @mcp.tool()
 @handle_mcp_tool_errors(return_type="str")
 @with_concurrency_limit
-def build_deep_index(ctx: Context) -> str:
+def build_deep_index(
+    ctx: Context,
+    max_workers: int | None = None,
+    timeout: int | None = None,
+) -> str:
     """
     Build the deep index (full symbol extraction) for the current project.
 
     This performs a complete re-index and loads it into memory.
+    Uses parallel processing by default. For large codebases (3000+ files),
+    tuning max_workers can significantly improve build times.
+
+    Args:
+        max_workers: Maximum number of parallel workers for file processing.
+            Defaults to min(4, cpu_count) when not specified.
+            Increase for I/O-bound workloads on machines with many cores.
+        timeout: Parallel build timeout in seconds. When not specified,
+            scales dynamically based on file count (0.5s per file,
+            min 30s, max 600s).
     """
-    return IndexManagementService(ctx).rebuild_deep_index()
+    return IndexManagementService(ctx).rebuild_deep_index(
+        max_workers=max_workers,
+        timeout=timeout,
+    )
 
 
 @mcp.tool()
