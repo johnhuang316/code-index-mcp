@@ -5,7 +5,6 @@ This replaces the monolithic parser implementation with a clean,
 maintainable Strategy pattern architecture.
 """
 
-import io
 import logging
 import os
 import time
@@ -17,6 +16,7 @@ from typing import Dict, List, Optional, Any, Tuple
 
 from .strategies import StrategyFactory
 from .models import SymbolInfo, FileInfo
+from ..utils.encoding import detect_encoding
 
 logger = logging.getLogger(__name__)
 
@@ -105,23 +105,24 @@ class JSONIndexBuilder:
                 pass
 
             with open(file_path, "rb") as raw:
-                sample = raw.read(8192)
-                if b"\x00" in sample:
-                    logger.info("Skipping binary file (NUL bytes): %s", rel_path)
-                    return None
-                raw.seek(0)
+                raw_bytes = raw.read()
 
-                with io.TextIOWrapper(raw, encoding="utf-8", errors="ignore") as f:
-                    if use_lightweight:
-                        # Read only first N lines for lightweight mode
-                        lines = []
-                        for i, line in enumerate(f):
-                            if i >= LIGHTWEIGHT_MAX_LINES:
-                                break
-                            lines.append(line)
-                        content = ''.join(lines)
-                    else:
-                        content = f.read()
+            # Check for binary content (NUL byte in first 8 KB)
+            if b"\x00" in raw_bytes[:8192]:
+                logger.info("Skipping binary file (NUL bytes): %s", rel_path)
+                return None
+
+            # Detect encoding from a sample and decode
+            encoding = detect_encoding(raw_bytes[:32768])
+            try:
+                content = raw_bytes.decode(encoding)
+            except (UnicodeDecodeError, LookupError):
+                content = raw_bytes.decode("utf-8", errors="ignore")
+
+            if use_lightweight:
+                lines = content.split('\n', LIGHTWEIGHT_MAX_LINES)
+                if len(lines) > LIGHTWEIGHT_MAX_LINES:
+                    content = '\n'.join(lines[:LIGHTWEIGHT_MAX_LINES])
 
             # Check line count for lightweight mode
             line_count = content.count('\n')

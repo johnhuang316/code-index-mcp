@@ -10,6 +10,7 @@ import os
 from typing import Dict, Any, List
 
 from .base_service import BaseService
+from ..utils.encoding import read_file_content
 
 # Configuration for get_symbol_body (conservative for stability)
 # Philosophy: Return minimal data reliably, use line numbers to drill down
@@ -183,8 +184,8 @@ class CodeIntelligenceService(BaseService):
             else:
                 full_path = file_path
 
-            with open(full_path, 'r', encoding='utf-8') as f:
-                lines = f.readlines()
+            content_str = read_file_content(full_path)
+            lines = content_str.splitlines(keepends=True)
 
             # Extract the symbol's code (1-indexed)
             start_idx = line - 1

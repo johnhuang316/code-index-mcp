@@ -10,6 +10,7 @@ Usage:
 
 import os
 from .base_service import BaseService
+from ..utils.encoding import read_file_content
 
 
 class FileService(BaseService):
@@ -23,6 +24,9 @@ class FileService(BaseService):
     def get_file_content(self, file_path: str) -> str:
         """
         Get file content for MCP resource.
+
+        Automatically detects file encoding (UTF-8, GBK, GB2312, Shift-JIS,
+        etc.) using charset-normalizer.
 
         Args:
             file_path: Path to the file (relative to project root)
@@ -41,22 +45,10 @@ class FileService(BaseService):
         full_path = os.path.join(self.base_path, file_path)
 
         try:
-            # Try UTF-8 first (most common)
-            with open(full_path, 'r', encoding='utf-8') as f:
-                return f.read()
-        except UnicodeDecodeError:
-            # Try other encodings if UTF-8 fails
-            encodings = ['utf-8-sig', 'latin-1', 'cp1252', 'iso-8859-1']
-            for encoding in encodings:
-                try:
-                    with open(full_path, 'r', encoding=encoding) as f:
-                        return f.read()
-                except UnicodeDecodeError:
-                    continue
-
+            return read_file_content(full_path)
+        except ValueError as e:
             raise ValueError(
-                f"Could not decode file {file_path}. File may have "
-                f"unsupported encoding."
-            ) from None
+                f"Could not decode file {file_path}. {e}"
+            ) from e
         except (FileNotFoundError, PermissionError, OSError) as e:
             raise FileNotFoundError(f"Error reading file: {e}") from e

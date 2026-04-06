@@ -10,6 +10,7 @@ from typing import Dict, List, Optional, Tuple
 import pathspec
 
 from .base import SearchStrategy, create_word_boundary_pattern
+from ..utils.encoding import read_file_content
 
 class BasicSearchStrategy(SearchStrategy):
     """
@@ -122,14 +123,14 @@ class BasicSearchStrategy(SearchStrategy):
                     continue
 
                 try:
-                    with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-                        for line_num, line in enumerate(f, 1):
-                            if search_regex.search(line):
-                                content = line.rstrip('\n')
-                                if rel_path not in results:
-                                    results[rel_path] = []
-                                results[rel_path].append((line_num, content))
-                except (UnicodeDecodeError, PermissionError, OSError):
+                    file_content = read_file_content(file_path)
+                    for line_num, line in enumerate(file_content.splitlines(), 1):
+                        if search_regex.search(line):
+                            content = line.rstrip('\n')
+                            if rel_path not in results:
+                                results[rel_path] = []
+                            results[rel_path].append((line_num, content))
+                except (UnicodeDecodeError, ValueError, PermissionError, OSError):
                     continue
                 except Exception:
                     continue
