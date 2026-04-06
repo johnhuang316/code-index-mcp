@@ -200,6 +200,8 @@ class _CLIConfig:
     """Holds CLI configuration for bootstrap operations."""
 
     project_path: str | None = None
+    file_watcher_enabled: bool | None = None
+    additional_exclude_patterns: list[str] | None = None
 
 
 class _BootstrapRequestContext:
@@ -229,8 +231,44 @@ async def indexer_lifespan(_server: FastMCP) -> AsyncIterator[CodeIndexerContext
     )
 
     try:
-        # Bootstrap project path when provided via CLI.
+        # Bootstrap project path when provided via CLI or env var.
         if _CLI_CONFIG.project_path:
+            # Apply env-based settings BEFORE initialize_project so they
+            # take effect during the first index build and watcher startup.
+            pre_settings = ProjectSettings(_CLI_CONFIG.project_path, skip_load=False)
+
+            if _CLI_CONFIG.additional_exclude_patterns:
+                try:
+                    pre_settings.update_exclude_patterns(
+                        _CLI_CONFIG.additional_exclude_patterns
+                    )
+                    logger.info(
+                        "Applied %d additional exclude patterns from env",
+                        len(_CLI_CONFIG.additional_exclude_patterns),
+                    )
+                except Exception as exc:  # pylint: disable=broad-except
+                    logger.error(
+                        "Failed to apply additional exclude patterns: %s", exc
+                    )
+
+            if _CLI_CONFIG.file_watcher_enabled is not None:
+                try:
+                    pre_settings.update_file_watcher_config(
+                        {"enabled": _CLI_CONFIG.file_watcher_enabled}
+                    )
+                    logger.info(
+                        "File watcher enabled=%s from env config",
+                        _CLI_CONFIG.file_watcher_enabled,
+                    )
+                except Exception as exc:  # pylint: disable=broad-except
+                    logger.error(
+                        "Failed to apply file watcher config from env: %s", exc
+                    )
+
+            # Set the env-configured settings on the context BEFORE
+            # initialize_project so services see the correct instance.
+            context.settings = pre_settings
+
             bootstrap_ctx = Context(
                 request_context=_BootstrapRequestContext(context), fastmcp=mcp
             )
@@ -238,12 +276,25 @@ async def indexer_lifespan(_server: FastMCP) -> AsyncIterator[CodeIndexerContext
                 message = ProjectManagementService(bootstrap_ctx).initialize_project(
                     _CLI_CONFIG.project_path
                 )
-                logger.info("Project initialized from CLI flag: %s", message)
+                logger.info("Project initialized from CLI/env config: %s", message)
             except Exception as exc:  # pylint: disable=broad-except
-                logger.error("Failed to initialize project from CLI flag: %s", exc)
+                logger.error("Failed to initialize project from CLI/env config: %s", exc)
                 raise RuntimeError(
                     f"Failed to initialize project path '{_CLI_CONFIG.project_path}'"
                 ) from exc
+
+            # No post-hoc stop needed: _setup_file_monitoring() now checks
+            # the enabled flag and skips startup when disabled.
+        else:
+            # Warn when env vars are set but PROJECT_PATH is missing.
+            if _CLI_CONFIG.file_watcher_enabled is not None:
+                logger.warning(
+                    "FILE_WATCHER_ENABLED is set but PROJECT_PATH is not; ignoring"
+                )
+            if _CLI_CONFIG.additional_exclude_patterns:
+                logger.warning(
+                    "ADDITIONAL_EXCLUDE_PATTERNS is set but PROJECT_PATH is not; ignoring"
+                )
 
         # Provide context to the server
         yield context
@@ -520,7 +571,26 @@ def main(argv: list[str] | None = None):
     args = _parse_args(argv)
 
     # Store CLI configuration for lifespan bootstrap.
-    _CLI_CONFIG.project_path = args.project_path
+    # CLI --project-path takes precedence over PROJECT_PATH env var.
+    _CLI_CONFIG.project_path = args.project_path or os.environ.get("PROJECT_PATH") or None
+
+    # Read FILE_WATCHER_ENABLED from env (only when not already set via CLI).
+    file_watcher_env = os.environ.get("FILE_WATCHER_ENABLED", "").strip().lower()
+    if file_watcher_env in ("true", "1", "yes"):
+        _CLI_CONFIG.file_watcher_enabled = True
+    elif file_watcher_env in ("false", "0", "no"):
+        _CLI_CONFIG.file_watcher_enabled = False
+    else:
+        _CLI_CONFIG.file_watcher_enabled = None
+
+    # Read ADDITIONAL_EXCLUDE_PATTERNS from env (comma-separated list).
+    exclude_env = os.environ.get("ADDITIONAL_EXCLUDE_PATTERNS", "").strip()
+    if exclude_env:
+        _CLI_CONFIG.additional_exclude_patterns = [
+            p.strip() for p in exclude_env.split(",") if p.strip()
+        ]
+    else:
+        _CLI_CONFIG.additional_exclude_patterns = None
 
     # Configure custom index root if provided
     if args.indexer_path:

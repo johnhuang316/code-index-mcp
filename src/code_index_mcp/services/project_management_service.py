@@ -57,6 +57,9 @@ class ProjectManagementService(BaseService):
     def _get_exclude_patterns(self) -> List[str]:
         """Read exclude patterns from project settings for indexing.
 
+        Reads project-level ``additional_exclude_patterns`` (set via env var
+        or the configure API) as well as file-watcher-level ``exclude_patterns``.
+
         Returns:
             List of directory/file patterns to exclude from indexing
         """
@@ -64,11 +67,16 @@ class ProjectManagementService(BaseService):
         if not self.settings:
             return patterns
         try:
-            config = self.settings.get_file_watcher_config()
-            for key in ('exclude_patterns', 'additional_exclude_patterns'):
-                for pattern in config.get(key) or []:
-                    if isinstance(pattern, str) and pattern.strip():
-                        patterns.append(pattern.strip())
+            config = self.settings.load_config()
+            # Project-level additional_exclude_patterns (set by env var / API)
+            for p in config.get('additional_exclude_patterns') or []:
+                if isinstance(p, str) and p.strip():
+                    patterns.append(p.strip())
+            # File-watcher-level exclude_patterns (built-in defaults)
+            fw = config.get('file_watcher', {})
+            for p in fw.get('exclude_patterns') or []:
+                if isinstance(p, str) and p.strip():
+                    patterns.append(p.strip())
         except Exception:  # noqa: BLE001 - fallback if config fails
             pass
         return patterns
@@ -126,6 +134,12 @@ class ProjectManagementService(BaseService):
         """
         # Business step 1: Initialize config tool
         self._config_tool.initialize_settings(path)
+
+        # Propagate the freshly-created ProjectSettings to the lifespan
+        # context so that every service accessing self.settings (via
+        # ContextHelper) sees the same, up-to-date instance.  This is
+        # the single source of truth for project settings.
+        self.helper.update_settings(self._config_tool._settings)
 
         # Normalize path for consistent processing
         normalized_path = self._config_tool.normalize_project_path(path)
@@ -270,8 +284,17 @@ class ProjectManagementService(BaseService):
             String describing monitoring setup result
         """
 
+        # Respect the file watcher enabled setting
+        if self.settings:
+            fw_config = self.settings.get_file_watcher_config()
+            if not fw_config.get('enabled', True):
+                logger.info("File watcher disabled by configuration")
+                return "monitoring_disabled"
 
         try:
+            # Capture current exclude patterns for use in the rebuild callback
+            rebuild_excludes = self._get_exclude_patterns()
+
             # Create rebuild callback that uses the deep index manager
             def rebuild_callback():
                 logger.info("File watcher triggered rebuild callback")
@@ -279,7 +302,7 @@ class ProjectManagementService(BaseService):
                     logger.debug(f"Starting shallow index rebuild for: {project_path}")
                     # Business logic: File changed, rebuild using SHALLOW index manager
                     try:
-                        if not self._shallow_manager.set_project_path(project_path):
+                        if not self._shallow_manager.set_project_path(project_path, rebuild_excludes):
                             logger.warning("Shallow manager set_project_path failed")
                             return False
                         if self._shallow_manager.build_index():
