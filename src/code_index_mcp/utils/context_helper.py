@@ -6,11 +6,13 @@ operations that services need to perform with the context.
 """
 
 import os
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 from mcp.server.fastmcp import Context
 
-from ..project_settings import ProjectSettings
 from ..request_context import get_request_project_path
+
+if TYPE_CHECKING:
+    from ..project_settings import ProjectSettings
 
 
 class ContextHelper:
@@ -48,7 +50,7 @@ class ContextHelper:
             return ""
 
     @property
-    def settings(self) -> Optional[ProjectSettings]:
+    def settings(self) -> Optional["ProjectSettings"]:
         """
         Get the project settings from the context.
 
@@ -139,7 +141,7 @@ class ContextHelper:
         except AttributeError:
             pass  # Context not available or doesn't support this operation
 
-    def update_settings(self, settings: ProjectSettings) -> None:
+    def update_settings(self, settings: "ProjectSettings") -> None:
         """
         Update the settings in the context.
 

@@ -544,6 +544,40 @@ class ProjectSettings:
         config["file_watcher"].update(updates)
         self.save_config(config)
 
+    def get_encoding_config(self) -> dict:
+        """
+        Get encoding-specific configuration.
+
+        Returns:
+            dict: Encoding configuration with defaults
+        """
+        config = self.load_config()
+        default_config = {
+            "default_encoding": None,
+        }
+
+        # Merge with loaded config
+        encoding_config = config.get("encoding", {})
+        for key, default_value in default_config.items():
+            if key not in encoding_config:
+                encoding_config[key] = default_value
+
+        return encoding_config
+
+    def update_encoding_config(self, updates: dict) -> None:
+        """
+        Update encoding configuration.
+
+        Args:
+            updates: Dictionary of configuration updates
+        """
+        config = self.load_config()
+        if "encoding" not in config:
+            config["encoding"] = self.get_encoding_config()
+
+        config["encoding"].update(updates)
+        self.save_config(config)
+
     def update_exclude_patterns(self, patterns: list) -> None:
         """Update project-level exclude patterns.
 
