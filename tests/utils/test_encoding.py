@@ -1,6 +1,11 @@
 """Tests for encoding detection and file reading utility."""
 
 import os
+import shutil
+import tempfile
+import unittest
+from unittest.mock import patch
+
 import pytest
 
 from code_index_mcp.utils.encoding import detect_encoding, read_file_content, open_with_detected_encoding
@@ -292,3 +297,62 @@ class TestOpenWithDetectedEncoding:
         with open_with_detected_encoding(str(f)) as fh:
             assert hasattr(fh, 'readline')
             assert hasattr(fh, '__iter__')
+
+
+class TestReadFileContentEncodingOverride(unittest.TestCase):
+    """Tests for the explicit encoding parameter on read_file_content()."""
+
+    def setUp(self):
+        self.tmp_dir = tempfile.mkdtemp()
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp_dir)
+
+    def test_explicit_gbk_encoding_decodes_correctly(self):
+        """When encoding='gbk' is passed, GBK bytes are decoded correctly."""
+        text = "# \u8fd9\u662f\u4e00\u4e2a\u4f7f\u7528GBK\u7f16\u7801\u7684\u6d4b\u8bd5\u6587\u4ef6\n"
+        path = os.path.join(self.tmp_dir, "gbk_explicit.py")
+        with open(path, "wb") as f:
+            f.write(text.encode("gbk"))
+        content = read_file_content(path, encoding="gbk")
+        self.assertIn("\u4f7f\u7528GBK", content)
+        self.assertIn("\u6d4b\u8bd5\u6587\u4ef6", content)
+
+    def test_explicit_encoding_skips_detection(self):
+        """When an explicit encoding is provided, charset-normalizer must not be called."""
+        path = os.path.join(self.tmp_dir, "skip_detect.txt")
+        with open(path, "wb") as f:
+            f.write(b"hello world\n")
+        with patch("code_index_mcp.utils.encoding.from_bytes") as mock_from_bytes:
+            content = read_file_content(path, encoding="utf-8")
+        mock_from_bytes.assert_not_called()
+        self.assertIn("hello", content)
+
+    def test_invalid_encoding_raises_lookup_error(self):
+        """An invalid encoding name must raise LookupError, not silently fallback."""
+        path = os.path.join(self.tmp_dir, "invalid_enc.txt")
+        with open(path, "wb") as f:
+            f.write(b"some bytes\n")
+        with self.assertRaises(LookupError):
+            read_file_content(path, encoding="not-a-real-encoding")
+
+
+class TestOpenWithDetectedEncodingOverride(unittest.TestCase):
+    """Tests for the explicit encoding parameter on open_with_detected_encoding()."""
+
+    def setUp(self):
+        self.tmp_dir = tempfile.mkdtemp()
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp_dir)
+
+    def test_explicit_encoding_used_for_streaming(self):
+        """When encoding='gbk' is passed, the file is opened with GBK."""
+        text = "# \u8fd9\u662f\u4e00\u4e2a\u4f7f\u7528GBK\u7f16\u7801\u7684\u6d4b\u8bd5\u6587\u4ef6\n"
+        path = os.path.join(self.tmp_dir, "gbk_stream.py")
+        with open(path, "wb") as f:
+            f.write(text.encode("gbk"))
+        with open_with_detected_encoding(path, encoding="gbk") as fh:
+            content = fh.read()
+        self.assertIn("\u4f7f\u7528GBK", content)
+        self.assertIn("\u6d4b\u8bd5\u6587\u4ef6", content)

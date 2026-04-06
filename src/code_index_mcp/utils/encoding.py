@@ -24,12 +24,6 @@ logger = logging.getLogger(__name__)
 # Sample size for encoding detection (32 KB is enough for reliable detection)
 _DETECTION_SAMPLE_SIZE = 32 * 1024
 
-# Capped chunked scan: when the initial sample is pure ASCII, scan forward
-# in fixed-size chunks to find the first non-ASCII byte.  This avoids reading
-# the entire file into memory while still detecting delayed non-UTF-8 content.
-_MAX_ASCII_SCAN_BYTES = 8 * 1024 * 1024  # 8 MB cap for scanning past ASCII prefix
-_SCAN_CHUNK_SIZE = 64 * 1024  # 64 KB chunks for the forward scan
-
 
 def _is_pure_ascii(data: bytes) -> bool:
     """Check if all bytes in data are ASCII (< 128)."""
@@ -76,7 +70,11 @@ def detect_encoding(raw_bytes: bytes) -> str:
     return "utf-8"
 
 
-def read_file_content(file_path: str, max_lines: Optional[int] = None) -> str:
+def read_file_content(
+    file_path: str,
+    max_lines: Optional[int] = None,
+    encoding: str | None = None,
+) -> str:
     """
     Read a file with automatic encoding detection.
 
@@ -86,6 +84,9 @@ def read_file_content(file_path: str, max_lines: Optional[int] = None) -> str:
     Args:
         file_path: Absolute path to the file to read.
         max_lines: If set, return only the first N lines.
+        encoding: If provided, use this encoding directly instead of
+            auto-detecting.  Errors with an explicit encoding are raised
+            (no silent fallback).
 
     Returns:
         Decoded file content as a string.
@@ -93,6 +94,8 @@ def read_file_content(file_path: str, max_lines: Optional[int] = None) -> str:
     Raises:
         FileNotFoundError: If the file does not exist.
         ValueError: If the file appears to be binary.
+        LookupError: If an explicit encoding name is invalid.
+        UnicodeDecodeError: If an explicit encoding cannot decode the file.
         OSError: On I/O errors.
     """
     if not os.path.exists(file_path):
@@ -105,13 +108,23 @@ def read_file_content(file_path: str, max_lines: Optional[int] = None) -> str:
     if b"\x00" in raw[:8192]:
         raise ValueError(f"File appears to be binary: {file_path}")
 
-    # Detect encoding from a sample
+    # Explicit encoding: decode directly, fail loudly on errors
+    if encoding is not None:
+        content = raw.decode(encoding)  # raises LookupError / UnicodeDecodeError
+
+        if max_lines is not None:
+            lines = content.split("\n", max_lines)
+            if len(lines) > max_lines:
+                content = "\n".join(lines[:max_lines])
+        return content
+
+    # Auto-detect encoding from a sample
     sample = raw[:_DETECTION_SAMPLE_SIZE]
-    encoding = detect_encoding(sample)
+    detected = detect_encoding(sample)
 
     # Decode with the detected encoding
     try:
-        content = raw.decode(encoding)
+        content = raw.decode(detected)
     except (UnicodeDecodeError, LookupError) as first_err:
         # Two-pass: if the sample was pure ASCII and decode failed, the real
         # encoding lives in the bytes beyond the sample.  Re-detect from the
@@ -127,7 +140,7 @@ def read_file_content(file_path: str, max_lines: Optional[int] = None) -> str:
                 logger.debug(
                     "Two-pass re-detection for %s: %s -> %s",
                     file_path,
-                    encoding,
+                    detected,
                     re_encoding,
                 )
                 try:
@@ -140,7 +153,7 @@ def read_file_content(file_path: str, max_lines: Optional[int] = None) -> str:
                 "Failed to decode %s with detected encoding %s, "
                 "falling back to utf-8 with replacement",
                 file_path,
-                encoding,
+                detected,
             )
             content = raw.decode("utf-8", errors="replace")
 
@@ -153,22 +166,28 @@ def read_file_content(file_path: str, max_lines: Optional[int] = None) -> str:
 
 
 @contextmanager
-def open_with_detected_encoding(file_path: str) -> Iterator[IO[str]]:
+def open_with_detected_encoding(
+    file_path: str,
+    encoding: str | None = None,
+) -> Iterator[IO[str]]:
     """
     Open a file with automatically detected encoding for streaming reads.
 
-    Reads a 32KB sample to detect encoding and checks for binary content.
-    When the sample is pure ASCII, performs a capped chunked scan (up to
-    8 MB beyond the sample) to find the first non-ASCII byte and re-detect
-    encoding from that region.  This avoids reading the entire file into
-    memory while still correctly handling files whose non-UTF-8 content
-    appears after a long ASCII prefix.
+    When *encoding* is provided, the file is opened directly with that
+    encoding (no sample read or detection).  Otherwise, reads a 32 KB
+    sample to detect the encoding via charset-normalizer.
+
+    For files with delayed non-UTF-8 content beyond 32 KB, pass encoding
+    explicitly.
 
     Args:
         file_path: Absolute path to the file.
+        encoding: If provided, use this encoding directly instead of
+            auto-detecting.
 
     Yields:
-        A text-mode file object using the detected encoding.
+        A text-mode file object using the detected (or explicit) encoding
+        with ``errors='replace'``.
 
     Raises:
         FileNotFoundError: If file does not exist.
@@ -177,43 +196,25 @@ def open_with_detected_encoding(file_path: str) -> Iterator[IO[str]]:
     if not os.path.exists(file_path):
         raise FileNotFoundError(f"File not found: {file_path}")
 
-    # Read a sample for binary check + encoding detection
+    if encoding is not None:
+        # Explicit encoding: skip sample read / detection entirely
+        fh = open(file_path, "r", encoding=encoding, errors="replace")
+        try:
+            yield fh
+        finally:
+            fh.close()
+        return
+
+    # Read a 32 KB sample for binary check + encoding detection
     with open(file_path, "rb") as f:
         sample = f.read(_DETECTION_SAMPLE_SIZE)
 
-        if b"\x00" in sample[:8192]:
-            raise ValueError(f"File appears to be binary: {file_path}")
+    if b"\x00" in sample[:8192]:
+        raise ValueError(f"File appears to be binary: {file_path}")
 
-        if _is_pure_ascii(sample):
-            # The real encoding may live beyond the sample.  Scan forward
-            # in fixed-size chunks (capped at _MAX_ASCII_SCAN_BYTES) to
-            # find the first non-ASCII byte.  If found, read a detection-
-            # sized sample starting from that byte so the non-ASCII bytes
-            # dominate the input to charset-normalizer.
-            scanned = 0
-            detection_sample = None
-            while scanned < _MAX_ASCII_SCAN_BYTES:
-                chunk = f.read(_SCAN_CHUNK_SIZE)
-                if not chunk:
-                    break
-                for i, byte in enumerate(chunk):
-                    if byte >= 128:
-                        # Seek to the non-ASCII position and read a
-                        # detection-sized sample from there.
-                        offset = f.tell() - len(chunk) + i
-                        f.seek(offset)
-                        detection_sample = f.read(_DETECTION_SAMPLE_SIZE)
-                        break
-                if detection_sample is not None:
-                    break
-                scanned += len(chunk)
+    detected = detect_encoding(sample)
 
-            if detection_sample is not None:
-                sample = detection_sample
-
-    encoding = detect_encoding(sample)
-
-    fh = open(file_path, "r", encoding=encoding, errors="replace")
+    fh = open(file_path, "r", encoding=detected, errors="replace")
     try:
         yield fh
     finally:
