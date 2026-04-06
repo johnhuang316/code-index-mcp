@@ -14,7 +14,8 @@ Usage:
 
 import logging
 import os
-from typing import Optional
+from contextlib import contextmanager
+from typing import IO, Iterator, Optional
 
 from charset_normalizer import from_bytes
 
@@ -43,7 +44,10 @@ def detect_encoding(raw_bytes: bytes) -> str:
 
     if best is not None and best.encoding:
         detected = best.encoding.lower()
-        logger.debug("Detected encoding: %s", detected)
+        confidence = best.coherence  # float 0.0-1.0 from charset-normalizer
+        logger.debug(
+            "Detected encoding: %s (confidence: %.2f)", detected, confidence
+        )
         return detected
 
     logger.debug("Could not detect encoding, falling back to utf-8")
@@ -101,3 +105,41 @@ def read_file_content(file_path: str, max_lines: Optional[int] = None) -> str:
             content = "\n".join(lines[:max_lines])
 
     return content
+
+
+@contextmanager
+def open_with_detected_encoding(file_path: str) -> Iterator[IO[str]]:
+    """
+    Open a file with automatically detected encoding for streaming reads.
+
+    Reads a 32KB sample to detect encoding, checks for binary content,
+    then returns a text-mode file object opened with the detected encoding.
+    The caller can iterate line-by-line without loading the whole file.
+
+    Args:
+        file_path: Absolute path to the file.
+
+    Yields:
+        A text-mode file object using the detected encoding.
+
+    Raises:
+        FileNotFoundError: If file does not exist.
+        ValueError: If file appears to be binary.
+    """
+    if not os.path.exists(file_path):
+        raise FileNotFoundError(f"File not found: {file_path}")
+
+    # Read a sample for binary check + encoding detection
+    with open(file_path, "rb") as f:
+        sample = f.read(_DETECTION_SAMPLE_SIZE)
+
+    if b"\x00" in sample[:8192]:
+        raise ValueError(f"File appears to be binary: {file_path}")
+
+    encoding = detect_encoding(sample)
+
+    fh = open(file_path, "r", encoding=encoding, errors="replace")
+    try:
+        yield fh
+    finally:
+        fh.close()

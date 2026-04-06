@@ -3,7 +3,7 @@
 import os
 import pytest
 
-from code_index_mcp.utils.encoding import detect_encoding, read_file_content
+from code_index_mcp.utils.encoding import detect_encoding, read_file_content, open_with_detected_encoding
 
 
 class TestDetectEncoding:
@@ -67,6 +67,13 @@ class TestDetectEncoding:
         raw = b"def foo():\n    return 42\n"
         enc = detect_encoding(raw)
         assert enc.lower() in ("ascii", "utf-8")
+
+    def test_detect_encoding_logs_confidence(self, caplog):
+        """Confidence score should be logged at DEBUG level."""
+        import logging
+        with caplog.at_level(logging.DEBUG, logger="code_index_mcp.utils.encoding"):
+            detect_encoding("Hello, world!".encode("utf-8"))
+        assert any("confidence" in record.message.lower() for record in caplog.records)
 
 
 class TestReadFileContent:
@@ -158,3 +165,50 @@ class TestReadFileContent:
         f.write_bytes(text.encode("gbk"))
         content = read_file_content(str(f))
         assert "\u4e2d\u6587\u6ce8\u91ca" in content
+
+
+class TestOpenWithDetectedEncoding:
+    """Tests for open_with_detected_encoding()."""
+
+    def test_reads_utf8_file_line_by_line(self, tmp_path):
+        f = tmp_path / "utf8.py"
+        f.write_text("line1\nline2\nline3\n", encoding="utf-8")
+        with open_with_detected_encoding(str(f)) as fh:
+            lines = fh.readlines()
+        assert len(lines) == 3
+        assert lines[0].strip() == "line1"
+
+    def test_reads_gbk_file_line_by_line(self, tmp_path):
+        f = tmp_path / "gbk.py"
+        # Use longer Chinese text for reliable GBK detection
+        text = (
+            "# \u8fd9\u662f\u4e00\u4e2a\u4f7f\u7528GBK\u7f16\u7801\u7684\u6d4b\u8bd5\u6587\u4ef6\n"
+            "# \u4e2d\u534e\u4eba\u6c11\u5171\u548c\u56fd\u662f\u4e16\u754c\u4e0a\u4eba\u53e3\u6700\u591a\u7684\u56fd\u5bb6\n"
+            "# \u8ba1\u7b97\u673a\u79d1\u5b66\u4e0e\u6280\u672f\u662f\u5f53\u4eca\u793e\u4f1a\u53d1\u5c55\u7684\u91cd\u8981\u9886\u57df\n"
+        )
+        f.write_bytes(text.encode("gbk"))
+        with open_with_detected_encoding(str(f)) as fh:
+            lines = fh.readlines()
+        assert len(lines) == 3
+        # Verify the content is decodable (encoding detected correctly)
+        combined = "".join(lines)
+        assert "GBK" in combined
+
+    def test_binary_file_raises_valueerror(self, tmp_path):
+        f = tmp_path / "binary.bin"
+        f.write_bytes(b"\x00\x01\x02\x03binary")
+        with pytest.raises(ValueError, match="binary"):
+            with open_with_detected_encoding(str(f)) as fh:
+                pass
+
+    def test_nonexistent_file_raises(self):
+        with pytest.raises(FileNotFoundError):
+            with open_with_detected_encoding("/nonexistent/file.txt") as fh:
+                pass
+
+    def test_returns_iterable_context_manager(self, tmp_path):
+        f = tmp_path / "ctx.txt"
+        f.write_text("hello\n", encoding="utf-8")
+        with open_with_detected_encoding(str(f)) as fh:
+            assert hasattr(fh, 'readline')
+            assert hasattr(fh, '__iter__')

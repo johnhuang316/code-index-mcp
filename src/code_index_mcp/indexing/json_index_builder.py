@@ -16,7 +16,7 @@ from typing import Dict, List, Optional, Any, Tuple
 
 from .strategies import StrategyFactory
 from .models import SymbolInfo, FileInfo
-from ..utils.encoding import detect_encoding
+from ..utils.encoding import detect_encoding, open_with_detected_encoding
 
 logger = logging.getLogger(__name__)
 
@@ -104,34 +104,51 @@ class JSONIndexBuilder:
             except OSError:
                 pass
 
-            with open(file_path, "rb") as raw:
-                raw_bytes = raw.read()
-
-            # Check for binary content (NUL byte in first 8 KB)
-            if b"\x00" in raw_bytes[:8192]:
-                logger.info("Skipping binary file (NUL bytes): %s", rel_path)
-                return None
-
-            # Detect encoding from a sample and decode
-            encoding = detect_encoding(raw_bytes[:32768])
-            try:
-                content = raw_bytes.decode(encoding)
-            except (UnicodeDecodeError, LookupError):
-                content = raw_bytes.decode("utf-8", errors="ignore")
-
             if use_lightweight:
-                lines = content.split('\n', LIGHTWEIGHT_MAX_LINES)
-                if len(lines) > LIGHTWEIGHT_MAX_LINES:
-                    content = '\n'.join(lines[:LIGHTWEIGHT_MAX_LINES])
+                # Streaming: detect encoding from sample, read only first N lines
+                try:
+                    with open_with_detected_encoding(file_path) as fh:
+                        lines = []
+                        for i, line in enumerate(fh):
+                            if i >= LIGHTWEIGHT_MAX_LINES:
+                                break
+                            lines.append(line)
+                        content = "".join(lines)
+                except ValueError:
+                    # Binary file
+                    logger.info("Skipping binary file: %s", rel_path)
+                    return None
+                except (UnicodeDecodeError, LookupError):
+                    content = ""
+                    with open(file_path, "r", encoding="utf-8", errors="ignore") as fh:
+                        for i, line in enumerate(fh):
+                            if i >= LIGHTWEIGHT_MAX_LINES:
+                                break
+                            content += line
+            else:
+                with open(file_path, "rb") as raw:
+                    raw_bytes = raw.read()
 
-            # Check line count for lightweight mode
-            line_count = content.count('\n')
-            if not use_lightweight and line_count > MAX_FILE_LINES:
-                logger.info("File with many lines (%d), using lightweight mode: %s", line_count, file_path)
-                use_lightweight = True
-                # Truncate content to first N lines
-                lines = content.split('\n')[:LIGHTWEIGHT_MAX_LINES]
-                content = '\n'.join(lines)
+                # Check for binary content (NUL byte in first 8 KB)
+                if b"\x00" in raw_bytes[:8192]:
+                    logger.info("Skipping binary file (NUL bytes): %s", rel_path)
+                    return None
+
+                # Detect encoding from a sample and decode
+                encoding = detect_encoding(raw_bytes[:32768])
+                try:
+                    content = raw_bytes.decode(encoding)
+                except (UnicodeDecodeError, LookupError):
+                    content = raw_bytes.decode("utf-8", errors="ignore")
+
+            # Check line count for lightweight mode (non-lightweight files only)
+            if not use_lightweight:
+                line_count = content.count('\n')
+                if line_count > MAX_FILE_LINES:
+                    logger.info("File with many lines (%d), using lightweight mode: %s", line_count, file_path)
+                    use_lightweight = True
+                    lines = content.split('\n')[:LIGHTWEIGHT_MAX_LINES]
+                    content = '\n'.join(lines)
 
             # Get appropriate strategy
             strategy = self.strategy_factory.get_strategy(ext)

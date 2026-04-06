@@ -8,7 +8,7 @@ import os
 from typing import Dict, Any, Optional
 from pathlib import Path
 
-from ...utils.encoding import read_file_content as _read_file_content
+from ...utils.encoding import read_file_content as _read_file_content, detect_encoding as _detect_encoding
 
 
 class FileSystemTool:
@@ -166,27 +166,20 @@ class FileSystemTool:
             True if file appears to be text, False otherwise
         """
         try:
-            # Try to read a small portion of the file
             with open(file_path, 'rb') as f:
-                chunk = f.read(1024)
+                chunk = f.read(8192)
 
             # Check for null bytes (common in binary files)
             if b'\x00' in chunk:
                 return False
 
-            # Try to decode as UTF-8
-            try:
-                chunk.decode('utf-8')
-                return True
-            except UnicodeDecodeError:
-                # Try other encodings
-                for encoding in ['latin-1', 'cp1252']:
-                    try:
-                        chunk.decode(encoding)
-                        return True
-                    except UnicodeDecodeError:
-                        continue
+            # Use charset-normalizer to detect encoding
+            encoding = _detect_encoding(chunk)
 
+            try:
+                chunk.decode(encoding)
+                return True
+            except (UnicodeDecodeError, LookupError):
                 return False
 
         except Exception:
