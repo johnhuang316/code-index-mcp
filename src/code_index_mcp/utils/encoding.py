@@ -151,9 +151,25 @@ def open_with_detected_encoding(file_path: str) -> Iterator[IO[str]]:
     """
     Open a file with automatically detected encoding for streaming reads.
 
-    Reads a 32KB sample to detect encoding, checks for binary content,
-    then returns a text-mode file object opened with the detected encoding.
-    The caller can iterate line-by-line without loading the whole file.
+    Reads a 32 KB sample to detect encoding, checks for binary content,
+    then returns a text-mode file object opened with the detected encoding
+    and ``errors='replace'``.  The caller can iterate line-by-line without
+    loading the whole file into memory.
+
+    Design note -- streaming vs full detection
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    Unlike :func:`read_file_content` (which performs two-pass detection and
+    can handle non-UTF-8 bytes that appear *after* the 32 KB sample), this
+    function detects encoding from the first 32 KB **only**.  If the sample
+    is pure ASCII the file is opened as UTF-8 (a superset of ASCII).
+
+    This means files whose first 32 KB are ASCII but whose later content
+    uses a different codec (e.g. GBK) will have the later bytes decoded
+    with replacement characters.  This is an intentional performance
+    tradeoff: scanning the entire file to locate the first non-ASCII byte
+    would negate the benefit of streaming.  In practice such files are
+    extremely rare, and consumers that need full correctness should use
+    :func:`read_file_content` instead.
 
     Args:
         file_path: Absolute path to the file.
@@ -171,16 +187,6 @@ def open_with_detected_encoding(file_path: str) -> Iterator[IO[str]]:
     # Read a sample for binary check + encoding detection
     with open(file_path, "rb") as f:
         sample = f.read(_DETECTION_SAMPLE_SIZE)
-        if _is_pure_ascii(sample):
-            # The real encoding may be beyond the sample.  Scan the rest
-            # for the first non-ASCII byte and detect from there, so the
-            # non-ASCII bytes dominate the detection input.
-            rest = f.read()
-            if rest:
-                for i, byte in enumerate(rest):
-                    if byte >= 128:
-                        sample = rest[i:]
-                        break
 
     if b"\x00" in sample[:8192]:
         raise ValueError(f"File appears to be binary: {file_path}")

@@ -16,7 +16,7 @@ from typing import Dict, List, Optional, Any, Tuple
 
 from .strategies import StrategyFactory
 from .models import SymbolInfo, FileInfo
-from ..utils.encoding import detect_encoding, open_with_detected_encoding, _is_pure_ascii
+from ..utils.encoding import read_file_content, open_with_detected_encoding
 
 logger = logging.getLogger(__name__)
 
@@ -126,36 +126,14 @@ class JSONIndexBuilder:
                                 break
                             content += line
             else:
-                with open(file_path, "rb") as raw:
-                    raw_bytes = raw.read()
-
-                # Check for binary content (NUL byte in first 8 KB)
-                if b"\x00" in raw_bytes[:8192]:
-                    logger.info("Skipping binary file (NUL bytes): %s", rel_path)
-                    return None
-
-                # Detect encoding from a sample and decode
-                sample = raw_bytes[:32768]
-                encoding = detect_encoding(sample)
                 try:
-                    content = raw_bytes.decode(encoding)
-                except (UnicodeDecodeError, LookupError) as first_err:
-                    # Two-pass: if sample was pure ASCII, re-detect from
-                    # the failure region (real encoding is beyond sample).
-                    content = None
-                    if (
-                        isinstance(first_err, UnicodeDecodeError)
-                        and _is_pure_ascii(sample)
-                    ):
-                        region = raw_bytes[first_err.start:]
-                        re_enc = detect_encoding(region)
-                        if re_enc != "utf-8":
-                            try:
-                                content = raw_bytes.decode(re_enc)
-                            except (UnicodeDecodeError, LookupError):
-                                pass
-                    if content is None:
-                        content = raw_bytes.decode("utf-8", errors="ignore")
+                    content = read_file_content(file_path)
+                except ValueError:
+                    # Binary file
+                    logger.info("Skipping binary file: %s", rel_path)
+                    return None
+                except (UnicodeDecodeError, LookupError):
+                    content = ""
 
             # Check line count for lightweight mode (non-lightweight files only)
             if not use_lightweight:

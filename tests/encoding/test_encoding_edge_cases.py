@@ -116,8 +116,10 @@ class TestJSONIndexBuilderLightweightDelayedNonAscii:
         assert result is not None
         symbols, file_info_dict, language, is_specialized = result
 
-        # Verify via open_with_detected_encoding that the Chinese text
-        # survives the same streaming path used by lightweight mode.
+        # Verify via open_with_detected_encoding that the content is readable.
+        # The streaming path uses sample-only detection, so delayed non-ASCII
+        # beyond 32KB is decoded with UTF-8 (which handles UTF-8 tails correctly
+        # since the file was written as UTF-8).
         with open_with_detected_encoding(str(file_path)) as fh:
             read_lines = []
             for idx, line in enumerate(fh):
@@ -126,7 +128,7 @@ class TestJSONIndexBuilderLightweightDelayedNonAscii:
                 read_lines.append(line)
         content = "".join(read_lines)
         assert "\u4e2d\u6587\u6ce8\u91ca" in content
-        assert "\ufffd" not in content  # no replacement characters
+        assert "\ufffd" not in content  # UTF-8 file, so no replacement needed
 
 
 class TestJSONIndexBuilderDelayedGBK:
