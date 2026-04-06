@@ -58,11 +58,12 @@ class IndexManagementService(BaseService):
         # Business validation
         self._validate_rebuild_request()
 
-        # Get user-configured exclude patterns
+        # Get user-configured exclude patterns and extra extensions
         excludes = self._get_exclude_patterns()
+        extra_exts = self._get_extra_extensions()
 
         # Shallow rebuild only (fast path)
-        if not self._shallow_manager.set_project_path(self.base_path, excludes):
+        if not self._shallow_manager.set_project_path(self.base_path, excludes, extra_extensions=extra_exts):
             raise RuntimeError("Failed to set project path (shallow) in index manager")
         if not self._shallow_manager.build_index():
             raise RuntimeError("Failed to rebuild shallow index")
@@ -131,6 +132,19 @@ class IndexManagementService(BaseService):
             pass
         return patterns
 
+    def _get_extra_extensions(self) -> List[str]:
+        """Read extra file extensions from project settings and environment.
+
+        Returns:
+            List of additional file extensions to include in indexing
+        """
+        if not self.settings:
+            return []
+        try:
+            return self.settings.get_extra_extensions()
+        except Exception:  # noqa: BLE001 - fallback if config fails
+            return []
+
     def _execute_rebuild_workflow(self) -> IndexRebuildResult:
         """
         Execute the core index rebuild business workflow.
@@ -140,11 +154,12 @@ class IndexManagementService(BaseService):
         """
         start_time = time.time()
 
-        # Get user-configured exclude patterns
+        # Get user-configured exclude patterns and extra extensions
         excludes = self._get_exclude_patterns()
+        extra_exts = self._get_extra_extensions()
 
-        # Set project path in index manager with exclusions
-        if not self._index_manager.set_project_path(self.base_path, excludes):
+        # Set project path in index manager with exclusions and extra extensions
+        if not self._index_manager.set_project_path(self.base_path, excludes, extra_extensions=extra_exts):
             raise RuntimeError("Failed to set project path in index manager")
 
         # Rebuild the index
@@ -190,11 +205,12 @@ class IndexManagementService(BaseService):
         # Ensure project is set up
         self._require_project_setup()
 
-        # Get user-configured exclude patterns
+        # Get user-configured exclude patterns and extra extensions
         excludes = self._get_exclude_patterns()
+        extra_exts = self._get_extra_extensions()
 
-        # Initialize manager with current base path and exclusions
-        if not self._shallow_manager.set_project_path(self.base_path, excludes):
+        # Initialize manager with current base path, exclusions, and extra extensions
+        if not self._shallow_manager.set_project_path(self.base_path, excludes, extra_extensions=extra_exts):
             raise RuntimeError("Failed to set project path in index manager")
 
         # Build shallow index

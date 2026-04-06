@@ -73,7 +73,20 @@ class ProjectManagementService(BaseService):
             pass
         return patterns
 
-    def initialize_project(self, path: str) -> str:
+    def _get_extra_extensions(self) -> List[str]:
+        """Read extra file extensions from project settings and environment.
+
+        Returns:
+            List of additional file extensions to include in indexing
+        """
+        if not self.settings:
+            return []
+        try:
+            return self.settings.get_extra_extensions()
+        except Exception:  # noqa: BLE001 - fallback if config fails
+            return []
+
+    def initialize_project(self, path: str, extra_extensions: list[str] | None = None) -> str:
         """
         Initialize a project with comprehensive business logic.
 
@@ -83,6 +96,7 @@ class ProjectManagementService(BaseService):
 
         Args:
             path: Project directory path to initialize
+            extra_extensions: Optional list of additional file extensions to index
 
         Returns:
             Success message with project information
@@ -92,6 +106,9 @@ class ProjectManagementService(BaseService):
         """
         # Business validation
         self._validate_initialization_request(path)
+
+        # Store extra extensions in project config if provided
+        self._extra_extensions = extra_extensions
 
         # Business workflow: Execute initialization
         result = self._execute_initialization_workflow(path)
@@ -129,6 +146,11 @@ class ProjectManagementService(BaseService):
 
         # Normalize path for consistent processing
         normalized_path = self._config_tool.normalize_project_path(path)
+
+        # Persist extra extensions if provided via tool parameter
+        extra_exts = getattr(self, '_extra_extensions', None)
+        if extra_exts and self.settings:
+            self.settings.update_extra_extensions(extra_exts)
 
         # Business step 2: Cleanup existing project state
         self._cleanup_existing_project()
@@ -182,8 +204,11 @@ class ProjectManagementService(BaseService):
         # Get user-configured exclude patterns
         excludes = self._get_exclude_patterns()
 
-        # Set project path in shallow manager with exclusions
-        if not self._shallow_manager.set_project_path(project_path, excludes):
+        # Get extra extensions from config + env
+        extra_exts = self._get_extra_extensions()
+
+        # Set project path in shallow manager with exclusions and extra extensions
+        if not self._shallow_manager.set_project_path(project_path, excludes, extra_extensions=extra_exts):
             raise RuntimeError(f"Failed to set project path (shallow): {project_path}")
 
         # Update context

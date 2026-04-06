@@ -553,3 +553,60 @@ class ProjectSettings:
         config = self.load_config()
         config["additional_exclude_patterns"] = patterns
         self.save_config(config)
+
+    def update_extra_extensions(self, extensions: list) -> None:
+        """Update custom file extensions for indexing.
+
+        Each extension should start with a dot (e.g., '.rsc', '.conf').
+        Extensions are normalized to lowercase with a leading dot.
+
+        Args:
+            extensions: List of file extensions to add
+        """
+        normalized = []
+        for ext in extensions:
+            ext = ext.strip().lower()
+            if ext and not ext.startswith('.'):
+                ext = '.' + ext
+            if ext:
+                normalized.append(ext)
+        config = self.load_config()
+        config["extra_extensions"] = normalized
+        self.save_config(config)
+
+    def get_extra_extensions(self) -> list:
+        """Get custom file extensions from config and environment variable.
+
+        Extensions from the EXTRA_EXTENSIONS environment variable
+        (comma-separated, e.g., '.rsc,.conf,.rules') are merged with
+        any extensions stored in the project config.
+
+        Returns:
+            List of extra file extensions (normalized, deduplicated)
+        """
+        extensions: list[str] = []
+
+        # From project config
+        config = self.load_config()
+        config_exts = config.get("extra_extensions", [])
+        if isinstance(config_exts, list):
+            extensions.extend(config_exts)
+
+        # From environment variable
+        env_val = os.environ.get("EXTRA_EXTENSIONS", "")
+        if env_val:
+            for ext in env_val.split(","):
+                ext = ext.strip().lower()
+                if ext and not ext.startswith('.'):
+                    ext = '.' + ext
+                if ext:
+                    extensions.append(ext)
+
+        # Deduplicate while preserving order
+        seen: set[str] = set()
+        result: list[str] = []
+        for ext in extensions:
+            if ext not in seen:
+                seen.add(ext)
+                result.append(ext)
+        return result

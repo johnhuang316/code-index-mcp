@@ -15,20 +15,30 @@ from ..constants import FILTER_CONFIG
 class FileFilter:
     """Centralized file filtering logic."""
     
-    def __init__(self, additional_excludes: Optional[List[str]] = None):
+    def __init__(self, additional_excludes: Optional[List[str]] = None, extra_extensions: Optional[List[str]] = None):
         """
         Initialize the file filter.
-        
+
         Args:
             additional_excludes: Additional directory patterns to exclude
+            extra_extensions: Additional file extensions to include (e.g., ['.rsc', '.conf'])
         """
         self.exclude_dirs = set(FILTER_CONFIG["exclude_directories"])
         self.exclude_files = set(FILTER_CONFIG["exclude_files"])
         self.supported_extensions = set(FILTER_CONFIG["supported_extensions"])
-        
+
         # Add user-defined exclusions
         if additional_excludes:
             self.exclude_dirs.update(additional_excludes)
+
+        # Add user-defined extra extensions
+        if extra_extensions:
+            for ext in extra_extensions:
+                ext = ext.strip().lower()
+                if ext and not ext.startswith('.'):
+                    ext = '.' + ext
+                if ext:
+                    self.supported_extensions.add(ext)
     
     def should_exclude_directory(self, dir_name: str) -> bool:
         """

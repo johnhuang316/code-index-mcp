@@ -200,6 +200,7 @@ class _CLIConfig:
     """Holds CLI configuration for bootstrap operations."""
 
     project_path: str | None = None
+    extra_extensions: list[str] | None = None
 
 
 class _BootstrapRequestContext:
@@ -236,7 +237,8 @@ async def indexer_lifespan(_server: FastMCP) -> AsyncIterator[CodeIndexerContext
             )
             try:
                 message = ProjectManagementService(bootstrap_ctx).initialize_project(
-                    _CLI_CONFIG.project_path
+                    _CLI_CONFIG.project_path,
+                    extra_extensions=_CLI_CONFIG.extra_extensions,
                 )
                 logger.info("Project initialized from CLI flag: %s", message)
             except Exception as exc:  # pylint: disable=broad-except
@@ -272,9 +274,16 @@ def get_file_content(file_path: str) -> str:
 
 @mcp.tool()
 @handle_mcp_tool_errors(return_type="str")
-def set_project_path(path: str, ctx: Context) -> str:
-    """Set the base project path for indexing."""
-    return ProjectManagementService(ctx).initialize_project(path)
+def set_project_path(path: str, ctx: Context, extra_extensions: list[str] | None = None) -> str:
+    """Set the base project path for indexing.
+
+    Args:
+        path: Project directory path to index
+        extra_extensions: Optional list of additional file extensions to index
+            (e.g., [".rsc", ".conf", ".rules"]). These are added alongside the
+            built-in supported extensions, using the fallback parsing strategy.
+    """
+    return ProjectManagementService(ctx).initialize_project(path, extra_extensions=extra_extensions)
 
 
 @mcp.tool()
@@ -484,6 +493,12 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Custom path for storing indices (overrides default /tmp/code_indexer location).",
     )
     parser.add_argument(
+        "--extra-extensions",
+        dest="extra_extensions",
+        default=None,
+        help="Comma-separated list of additional file extensions to index (e.g., '.rsc,.conf,.rules').",
+    )
+    parser.add_argument(
         "--tool-prefix",
         dest="tool_prefix",
         default=None,
@@ -504,6 +519,12 @@ def main(argv: list[str] | None = None):
 
     # Store CLI configuration for lifespan bootstrap.
     _CLI_CONFIG.project_path = args.project_path
+
+    # Parse extra extensions from CLI flag
+    if args.extra_extensions:
+        _CLI_CONFIG.extra_extensions = [
+            ext.strip() for ext in args.extra_extensions.split(",") if ext.strip()
+        ]
 
     # Configure custom index root if provided
     if args.indexer_path:

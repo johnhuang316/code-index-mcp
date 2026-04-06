@@ -51,7 +51,7 @@ class JSONIndexBuilder:
     4. Assembling the final JSON index
     """
 
-    def __init__(self, project_path: str, additional_excludes: Optional[List[str]] = None):
+    def __init__(self, project_path: str, additional_excludes: Optional[List[str]] = None, extra_extensions: Optional[List[str]] = None):
         from ..utils import FileFilter
 
         # Input validation
@@ -68,7 +68,7 @@ class JSONIndexBuilder:
         self.project_path = project_path
         self.in_memory_index: Optional[Dict[str, Any]] = None
         self.strategy_factory = StrategyFactory()
-        self.file_filter = FileFilter(additional_excludes)
+        self.file_filter = FileFilter(additional_excludes, extra_extensions=extra_extensions)
 
         logger.info(f"Initialized JSON index builder for {project_path}")
         strategy_info = self.strategy_factory.get_strategy_info()

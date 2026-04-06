@@ -34,8 +34,9 @@ class SQLiteIndexBuilder(JSONIndexBuilder):
         project_path: str,
         store: SQLiteIndexStore,
         additional_excludes: Optional[List[str]] = None,
+        extra_extensions: Optional[List[str]] = None,
     ):
-        super().__init__(project_path, additional_excludes)
+        super().__init__(project_path, additional_excludes, extra_extensions=extra_extensions)
         self.store = store
 
     def build_index(
