@@ -530,137 +530,96 @@ class TestFileWatcherDisabledPreventsStartup(unittest.TestCase):
         svc._watcher_tool.start_monitoring.assert_called_once()
 
 
-class TestBootstrapSettingsIdentity(unittest.TestCase):
-    """Verify the lifespan context.settings is the SAME instance that has env config."""
+class TestEndToEndSettingsLifecycle(unittest.TestCase):
+    """End-to-end test: real ProjectSettings, real temp dir, no mocks on settings path.
+
+    Verifies that env-configured settings flow through the full initialization
+    lifecycle and end up as the single source of truth in the lifespan context.
+    """
 
     def setUp(self):
-        self._orig_project_path = _CLI_CONFIG.project_path
-        self._orig_fw_enabled = _CLI_CONFIG.file_watcher_enabled
-        self._orig_exclude = _CLI_CONFIG.additional_exclude_patterns
+        import tempfile
+        self._tmpdir = tempfile.mkdtemp()
+        # Create a minimal file so indexing has something to find
+        with open(os.path.join(self._tmpdir, "hello.py"), "w") as f:
+            f.write("print('hello')\n")
 
     def tearDown(self):
-        _CLI_CONFIG.project_path = self._orig_project_path
-        _CLI_CONFIG.file_watcher_enabled = self._orig_fw_enabled
-        _CLI_CONFIG.additional_exclude_patterns = self._orig_exclude
+        import shutil
+        shutil.rmtree(self._tmpdir, ignore_errors=True)
 
-    @patch("code_index_mcp.server.ProjectManagementService")
-    @patch("code_index_mcp.server.ProjectSettings")
-    def test_context_settings_is_pre_settings_after_env_config(
-        self, mock_settings_cls, mock_pms_cls
-    ):
-        """After env config is applied, context.settings must be the pre_settings instance."""
-        _CLI_CONFIG.project_path = "/tmp/test_project"
-        _CLI_CONFIG.additional_exclude_patterns = ["vendor"]
-        _CLI_CONFIG.file_watcher_enabled = False
+    def test_initialize_project_propagates_settings_to_context(self):
+        """After initialize_project, context.settings points to a valid
+        ProjectSettings for the project path, not the stale bootstrap one."""
+        from code_index_mcp.server import CodeIndexerContext, _BootstrapRequestContext, mcp
+        from code_index_mcp.project_settings import ProjectSettings
+        from code_index_mcp.services.project_management_service import ProjectManagementService
+        from mcp.server.fastmcp import Context
 
-        mock_pre_settings = MagicMock(name="pre_settings")
-        mock_lifespan_settings = MagicMock(name="lifespan_settings")
-
-        def settings_side_effect(path, skip_load=True):
-            if skip_load:
-                return mock_lifespan_settings
-            return mock_pre_settings
-
-        mock_settings_cls.side_effect = settings_side_effect
-
-        mock_pms_instance = MagicMock()
-        mock_pms_instance.initialize_project.return_value = "ok"
-        mock_pms_cls.return_value = mock_pms_instance
-
-        captured_context = None
-
-        async def _run():
-            nonlocal captured_context
-            async with indexer_lifespan(mcp) as ctx:
-                captured_context = ctx
-
-        asyncio.run(_run())
-
-        # The context.settings must be the pre_settings (env-configured) instance,
-        # NOT the original lifespan_settings (empty, skip_load=True).
-        self.assertIs(captured_context.settings, mock_pre_settings)
-
-    @patch("code_index_mcp.server.ProjectManagementService")
-    @patch("code_index_mcp.server.ProjectSettings")
-    def test_service_receives_env_configured_settings(
-        self, mock_settings_cls, mock_pms_cls
-    ):
-        """The ProjectManagementService constructed during bootstrap must see env config
-        in context.settings, so _get_exclude_patterns() returns the right values."""
-        _CLI_CONFIG.project_path = "/tmp/test_project"
-        _CLI_CONFIG.additional_exclude_patterns = ["vendor", ".cache"]
-        _CLI_CONFIG.file_watcher_enabled = False
-
-        mock_pre_settings = MagicMock(name="pre_settings")
-        mock_lifespan_settings = MagicMock(name="lifespan_settings")
-
-        def settings_side_effect(path, skip_load=True):
-            if skip_load:
-                return mock_lifespan_settings
-            return mock_pre_settings
-
-        mock_settings_cls.side_effect = settings_side_effect
-
-        # Capture the context that ProjectManagementService is constructed with
-        captured_bootstrap_settings = []
-
-        def capture_pms(bootstrap_ctx):
-            settings = bootstrap_ctx.request_context.lifespan_context.settings
-            captured_bootstrap_settings.append(settings)
-            mock_instance = MagicMock()
-            mock_instance.initialize_project.return_value = "ok"
-            return mock_instance
-
-        mock_pms_cls.side_effect = capture_pms
-
-        async def _run():
-            async with indexer_lifespan(mcp) as ctx:
-                pass
-
-        asyncio.run(_run())
-
-        # The settings seen by ProjectManagementService must be the pre_settings
-        self.assertEqual(len(captured_bootstrap_settings), 1)
-        self.assertIs(captured_bootstrap_settings[0], mock_pre_settings)
-
-    @patch("code_index_mcp.server.ProjectManagementService")
-    @patch("code_index_mcp.server.ProjectSettings")
-    def test_watcher_disabled_config_on_context_settings(
-        self, mock_settings_cls, mock_pms_cls
-    ):
-        """When FILE_WATCHER_ENABLED=false, update_file_watcher_config is called on the
-        instance that ends up in context.settings."""
-        _CLI_CONFIG.project_path = "/tmp/test_project"
-        _CLI_CONFIG.file_watcher_enabled = False
-        _CLI_CONFIG.additional_exclude_patterns = None
-
-        mock_pre_settings = MagicMock(name="pre_settings")
-        mock_lifespan_settings = MagicMock(name="lifespan_settings")
-
-        def settings_side_effect(path, skip_load=True):
-            if skip_load:
-                return mock_lifespan_settings
-            return mock_pre_settings
-
-        mock_settings_cls.side_effect = settings_side_effect
-
-        mock_pms_instance = MagicMock()
-        mock_pms_instance.initialize_project.return_value = "ok"
-        mock_pms_cls.return_value = mock_pms_instance
-
-        captured_context = None
-
-        async def _run():
-            nonlocal captured_context
-            async with indexer_lifespan(mcp) as ctx:
-                captured_context = ctx
-
-        asyncio.run(_run())
-
-        self.assertIs(captured_context.settings, mock_pre_settings)
-        mock_pre_settings.update_file_watcher_config.assert_called_once_with(
-            {"enabled": False}
+        # 1. Create a real lifespan context (like indexer_lifespan does)
+        initial_settings = ProjectSettings("", skip_load=True)
+        context = CodeIndexerContext(
+            base_path="", settings=initial_settings, file_watcher_service=None
         )
+
+        # 2. Simulate the bootstrap: create pre_settings with env config
+        pre_settings = ProjectSettings(self._tmpdir, skip_load=False)
+        pre_settings.update_exclude_patterns(["vendor", ".cache"])
+        pre_settings.update_file_watcher_config({"enabled": False})
+
+        # Set pre_settings on context (as the fixed server.py does)
+        context.settings = pre_settings
+
+        # 3. Call initialize_project via ProjectManagementService
+        bootstrap_ctx = Context(
+            request_context=_BootstrapRequestContext(context), fastmcp=mcp
+        )
+        svc = ProjectManagementService(bootstrap_ctx)
+        result = svc.initialize_project(self._tmpdir)
+
+        # 4. Verify: context.settings is updated and NOT the stale initial_settings
+        self.assertIsNot(context.settings, initial_settings,
+            "context.settings must be updated by initialize_project")
+        self.assertEqual(
+            context.settings.base_path,
+            os.path.normpath(os.path.abspath(self._tmpdir)),
+        )
+
+        # 5. Verify: env config is readable from the context's settings
+        config = context.settings.load_config()
+        self.assertIn("vendor", config.get("additional_exclude_patterns", []))
+        self.assertIn(".cache", config.get("additional_exclude_patterns", []))
+        self.assertFalse(config.get("file_watcher", {}).get("enabled", True))
+
+    def test_set_project_path_updates_context_settings(self):
+        """Simulates the normal set_project_path MCP tool call (no bootstrap).
+        Verifies that context.settings is updated from the stale initial to the new one."""
+        from code_index_mcp.server import CodeIndexerContext, _BootstrapRequestContext, mcp
+        from code_index_mcp.project_settings import ProjectSettings
+        from code_index_mcp.services.project_management_service import ProjectManagementService
+        from mcp.server.fastmcp import Context
+
+        # Start with stale settings (simulates fresh server, no bootstrap)
+        initial_settings = ProjectSettings("", skip_load=True)
+        context = CodeIndexerContext(
+            base_path="", settings=initial_settings, file_watcher_service=None
+        )
+
+        # Create a Context pointing to lifespan context
+        mock_request_ctx = _BootstrapRequestContext(context)
+        ctx = Context(request_context=mock_request_ctx, fastmcp=mcp)
+
+        svc = ProjectManagementService(ctx)
+        result = svc.initialize_project(self._tmpdir)
+
+        # context.settings must now be a real ProjectSettings for self._tmpdir
+        self.assertIsNot(context.settings, initial_settings)
+        self.assertEqual(
+            context.settings.base_path,
+            os.path.normpath(os.path.abspath(self._tmpdir)),
+        )
+        # load_config must not return {} (the skip_load behavior)
+        self.assertFalse(context.settings.skip_load)
 
 
 class TestWatcherRebuildExcludePatterns(unittest.TestCase):

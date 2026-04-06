@@ -135,6 +135,12 @@ class ProjectManagementService(BaseService):
         # Business step 1: Initialize config tool
         self._config_tool.initialize_settings(path)
 
+        # Propagate the freshly-created ProjectSettings to the lifespan
+        # context so that every service accessing self.settings (via
+        # ContextHelper) sees the same, up-to-date instance.  This is
+        # the single source of truth for project settings.
+        self.helper.update_settings(self._config_tool._settings)
+
         # Normalize path for consistent processing
         normalized_path = self._config_tool.normalize_project_path(path)
 
