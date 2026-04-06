@@ -233,6 +233,38 @@ async def indexer_lifespan(_server: FastMCP) -> AsyncIterator[CodeIndexerContext
     try:
         # Bootstrap project path when provided via CLI or env var.
         if _CLI_CONFIG.project_path:
+            # Apply env-based settings BEFORE initialize_project so they
+            # take effect during the first index build and watcher startup.
+            pre_settings = ProjectSettings(_CLI_CONFIG.project_path, skip_load=False)
+
+            if _CLI_CONFIG.additional_exclude_patterns:
+                try:
+                    pre_settings.update_exclude_patterns(
+                        _CLI_CONFIG.additional_exclude_patterns
+                    )
+                    logger.info(
+                        "Applied %d additional exclude patterns from env",
+                        len(_CLI_CONFIG.additional_exclude_patterns),
+                    )
+                except Exception as exc:  # pylint: disable=broad-except
+                    logger.error(
+                        "Failed to apply additional exclude patterns: %s", exc
+                    )
+
+            if _CLI_CONFIG.file_watcher_enabled is not None:
+                try:
+                    pre_settings.update_file_watcher_config(
+                        {"enabled": _CLI_CONFIG.file_watcher_enabled}
+                    )
+                    logger.info(
+                        "File watcher enabled=%s from env config",
+                        _CLI_CONFIG.file_watcher_enabled,
+                    )
+                except Exception as exc:  # pylint: disable=broad-except
+                    logger.error(
+                        "Failed to apply file watcher config from env: %s", exc
+                    )
+
             bootstrap_ctx = Context(
                 request_context=_BootstrapRequestContext(context), fastmcp=mcp
             )
@@ -247,35 +279,21 @@ async def indexer_lifespan(_server: FastMCP) -> AsyncIterator[CodeIndexerContext
                     f"Failed to initialize project path '{_CLI_CONFIG.project_path}'"
                 ) from exc
 
-            # Apply additional exclude patterns from env if provided
-            if _CLI_CONFIG.additional_exclude_patterns and context.settings:
-                try:
-                    context.settings.update_exclude_patterns(
-                        _CLI_CONFIG.additional_exclude_patterns
-                    )
-                    logger.info(
-                        "Applied %d additional exclude patterns from env",
-                        len(_CLI_CONFIG.additional_exclude_patterns),
-                    )
-                except Exception as exc:  # pylint: disable=broad-except
-                    logger.error(
-                        "Failed to apply additional exclude patterns: %s", exc
-                    )
-
-            # Apply file watcher configuration from env if provided
-            if _CLI_CONFIG.file_watcher_enabled is not None and context.settings:
-                try:
-                    context.settings.update_file_watcher_config(
-                        {"enabled": _CLI_CONFIG.file_watcher_enabled}
-                    )
-                    logger.info(
-                        "File watcher enabled=%s from env config",
-                        _CLI_CONFIG.file_watcher_enabled,
-                    )
-                except Exception as exc:  # pylint: disable=broad-except
-                    logger.error(
-                        "Failed to apply file watcher config from env: %s", exc
-                    )
+            # If file watcher was explicitly disabled, ensure it is stopped
+            # (initialize_project starts it unconditionally).
+            if _CLI_CONFIG.file_watcher_enabled is False and context.file_watcher_service:
+                context.file_watcher_service.stop_monitoring()
+                logger.info("Stopped file watcher because FILE_WATCHER_ENABLED=false")
+        else:
+            # Warn when env vars are set but PROJECT_PATH is missing.
+            if _CLI_CONFIG.file_watcher_enabled is not None:
+                logger.warning(
+                    "FILE_WATCHER_ENABLED is set but PROJECT_PATH is not; ignoring"
+                )
+            if _CLI_CONFIG.additional_exclude_patterns:
+                logger.warning(
+                    "ADDITIONAL_EXCLUDE_PATTERNS is set but PROJECT_PATH is not; ignoring"
+                )
 
         # Provide context to the server
         yield context

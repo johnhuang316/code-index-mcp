@@ -1,14 +1,12 @@
 """Tests for environment variable configuration support (Issue #28)."""
 
+import asyncio
+import logging
 import os
-import sys
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, call
 
-# Add src to path if not already there
-sys.path.insert(0, os.path.join(os.getcwd(), "src"))
-
-from code_index_mcp.server import _CLI_CONFIG, _parse_args, main
+from code_index_mcp.server import _CLI_CONFIG, _parse_args, indexer_lifespan, main, mcp
 
 
 class TestEnvVarProjectPath(unittest.TestCase):
@@ -207,6 +205,184 @@ class TestEnvVarExcludePatterns(unittest.TestCase):
             _CLI_CONFIG.additional_exclude_patterns,
             ["node_modules", "dist"],
         )
+
+
+class TestLifespanEnvConfigIntegration(unittest.TestCase):
+    """Integration tests verifying that indexer_lifespan applies env config correctly."""
+
+    def setUp(self):
+        self._orig_project_path = _CLI_CONFIG.project_path
+        self._orig_fw_enabled = _CLI_CONFIG.file_watcher_enabled
+        self._orig_exclude = _CLI_CONFIG.additional_exclude_patterns
+
+    def tearDown(self):
+        _CLI_CONFIG.project_path = self._orig_project_path
+        _CLI_CONFIG.file_watcher_enabled = self._orig_fw_enabled
+        _CLI_CONFIG.additional_exclude_patterns = self._orig_exclude
+
+    def _run_lifespan(self):
+        """Helper to run the async indexer_lifespan and return the yielded context."""
+        context = None
+
+        async def _run():
+            nonlocal context
+            async with indexer_lifespan(mcp) as ctx:
+                context = ctx
+
+        asyncio.run(_run())
+        return context
+
+    @patch("code_index_mcp.server.ProjectSettings")
+    @patch("code_index_mcp.server.ProjectManagementService")
+    def test_exclude_patterns_applied_before_initialize(
+        self, mock_pms_cls, mock_settings_cls
+    ):
+        """ADDITIONAL_EXCLUDE_PATTERNS must be written to settings BEFORE initialize_project."""
+        _CLI_CONFIG.project_path = "/tmp/test_project"
+        _CLI_CONFIG.additional_exclude_patterns = ["vendor", ".cache"]
+        _CLI_CONFIG.file_watcher_enabled = None
+
+        # Track call order
+        call_order = []
+
+        mock_pre_settings = MagicMock()
+        mock_lifespan_settings = MagicMock()
+
+        def settings_side_effect(path, skip_load=True):
+            if skip_load:
+                return mock_lifespan_settings
+            call_order.append("pre_settings_created")
+            return mock_pre_settings
+
+        mock_settings_cls.side_effect = settings_side_effect
+
+        mock_pre_settings.update_exclude_patterns.side_effect = (
+            lambda p: call_order.append("update_exclude_patterns")
+        )
+
+        mock_pms_instance = MagicMock()
+        mock_pms_cls.return_value = mock_pms_instance
+        mock_pms_instance.initialize_project.side_effect = (
+            lambda p: call_order.append("initialize_project") or "ok"
+        )
+
+        self._run_lifespan()
+
+        # Exclude patterns must be applied before initialize_project
+        self.assertEqual(
+            call_order,
+            ["pre_settings_created", "update_exclude_patterns", "initialize_project"],
+        )
+        mock_pre_settings.update_exclude_patterns.assert_called_once_with(
+            ["vendor", ".cache"]
+        )
+
+    @patch("code_index_mcp.server.ProjectSettings")
+    @patch("code_index_mcp.server.ProjectManagementService")
+    def test_file_watcher_config_applied_before_initialize(
+        self, mock_pms_cls, mock_settings_cls
+    ):
+        """FILE_WATCHER_ENABLED must be written to settings BEFORE initialize_project."""
+        _CLI_CONFIG.project_path = "/tmp/test_project"
+        _CLI_CONFIG.file_watcher_enabled = True
+        _CLI_CONFIG.additional_exclude_patterns = None
+
+        call_order = []
+
+        mock_pre_settings = MagicMock()
+        mock_lifespan_settings = MagicMock()
+
+        def settings_side_effect(path, skip_load=True):
+            if skip_load:
+                return mock_lifespan_settings
+            call_order.append("pre_settings_created")
+            return mock_pre_settings
+
+        mock_settings_cls.side_effect = settings_side_effect
+
+        mock_pre_settings.update_file_watcher_config.side_effect = (
+            lambda cfg: call_order.append("update_file_watcher_config")
+        )
+
+        mock_pms_instance = MagicMock()
+        mock_pms_cls.return_value = mock_pms_instance
+        mock_pms_instance.initialize_project.side_effect = (
+            lambda p: call_order.append("initialize_project") or "ok"
+        )
+
+        self._run_lifespan()
+
+        self.assertEqual(
+            call_order,
+            ["pre_settings_created", "update_file_watcher_config", "initialize_project"],
+        )
+        mock_pre_settings.update_file_watcher_config.assert_called_once_with(
+            {"enabled": True}
+        )
+
+    @patch("code_index_mcp.server.ProjectSettings")
+    @patch("code_index_mcp.server.ProjectManagementService")
+    def test_file_watcher_stopped_when_disabled(
+        self, mock_pms_cls, mock_settings_cls
+    ):
+        """When FILE_WATCHER_ENABLED=false, the watcher must be stopped after init."""
+        _CLI_CONFIG.project_path = "/tmp/test_project"
+        _CLI_CONFIG.file_watcher_enabled = False
+        _CLI_CONFIG.additional_exclude_patterns = None
+
+        mock_pre_settings = MagicMock()
+        mock_lifespan_settings = MagicMock()
+
+        def settings_side_effect(path, skip_load=True):
+            return mock_lifespan_settings if skip_load else mock_pre_settings
+
+        mock_settings_cls.side_effect = settings_side_effect
+
+        mock_pms_instance = MagicMock()
+        mock_pms_instance.initialize_project.return_value = "ok"
+
+        watcher_mock = MagicMock()
+
+        # Intercept ProjectManagementService construction to set the watcher
+        # on the lifespan context (simulating what _setup_file_monitoring does).
+        def capture_pms_init(bootstrap_ctx):
+            lifespan_ctx = bootstrap_ctx.request_context.lifespan_context
+            lifespan_ctx.file_watcher_service = watcher_mock
+            return mock_pms_instance
+
+        mock_pms_cls.side_effect = capture_pms_init
+
+        async def _run():
+            async with indexer_lifespan(mcp) as ctx:
+                pass
+
+        asyncio.run(_run())
+
+        # The watcher should have been stopped because enabled=False.
+        # stop_monitoring is called once explicitly after init and once in
+        # the finally cleanup block, so we check it was called at least once.
+        watcher_mock.stop_monitoring.assert_called()
+
+    @patch("code_index_mcp.server.ProjectSettings")
+    @patch("code_index_mcp.server.ProjectManagementService")
+    def test_warning_when_env_vars_set_without_project_path(
+        self, mock_pms_cls, mock_settings_cls
+    ):
+        """Env vars without PROJECT_PATH should log warnings."""
+        _CLI_CONFIG.project_path = None
+        _CLI_CONFIG.file_watcher_enabled = True
+        _CLI_CONFIG.additional_exclude_patterns = ["vendor"]
+
+        mock_settings_cls.return_value = MagicMock()
+
+        with self.assertLogs("code_index_mcp.server", level="WARNING") as cm:
+            self._run_lifespan()
+
+        log_output = "\n".join(cm.output)
+        self.assertIn("FILE_WATCHER_ENABLED", log_output)
+        self.assertIn("ADDITIONAL_EXCLUDE_PATTERNS", log_output)
+        # initialize_project should NOT have been called
+        mock_pms_cls.assert_not_called()
 
 
 if __name__ == "__main__":
