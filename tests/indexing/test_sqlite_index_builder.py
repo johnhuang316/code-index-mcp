@@ -88,7 +88,11 @@ def test_build_index_keeps_completed_results_when_parallel_timeout_hits(tmp_path
     with caplog.at_level("WARNING"):
         stats = builder.build_index(parallel=True, max_workers=2)
 
-    assert stats == {"files": 1, "symbols": 1, "languages": 1}
+    assert stats["files"] == 1
+    assert stats["symbols"] == 1
+    assert stats["languages"] == 1
+    assert stats["timed_out"] is True
+    assert stats["total_files"] == 2
     assert unfinished_future.cancel_called is True
     assert "Cancelled timed-out files: stuck.py" in caplog.text
     assert executor.shutdown_calls == [{"wait": False, "cancel_futures": False}]
@@ -122,7 +126,11 @@ def test_build_index_logs_uncancellable_running_future_on_timeout(tmp_path, monk
     with caplog.at_level("WARNING"):
         stats = builder.build_index(parallel=True, max_workers=2)
 
-    assert stats == {"files": 1, "symbols": 1, "languages": 1}
+    assert stats["files"] == 1
+    assert stats["symbols"] == 1
+    assert stats["languages"] == 1
+    assert stats["timed_out"] is True
+    assert stats["total_files"] == 2
     assert running_future.cancel_called is True
     assert "Still running after timeout and could not be cancelled: running.py" in caplog.text
     assert executor.shutdown_calls == [{"wait": False, "cancel_futures": False}]

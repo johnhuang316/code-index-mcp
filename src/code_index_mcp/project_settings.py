@@ -554,7 +554,6 @@ class ProjectSettings:
         config = self.load_config()
         default_config = {
             "max_workers": None,  # None = auto (min(4, cpu_count))
-            "parallel": True,
             "timeout_seconds": None,  # None = auto-scale based on file count
         }
 

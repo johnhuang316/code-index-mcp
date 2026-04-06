@@ -103,13 +103,6 @@ class SQLiteIndexManager:
                     max_workers=max_workers,
                     timeout=timeout,
                 )
-                logger.info(
-                    "SQLite index build complete: %s files, %s symbols",
-                    stats.get("files"),
-                    stats.get("symbols"),
-                )
-                self._is_loaded = True
-                return True
             except SQLiteSchemaMismatchError:
                 logger.warning("Schema mismatch detected; recreating database")
                 self.store.clear()  # type: ignore[union-attr]
@@ -117,17 +110,28 @@ class SQLiteIndexManager:
                     max_workers=max_workers,
                     timeout=timeout,
                 )
-                logger.info(
-                    "SQLite index rebuild after schema reset: %s files, %s symbols",
-                    stats.get("files"),
-                    stats.get("symbols"),
-                )
-                self._is_loaded = True
-                return True
             except Exception as exc:  # pragma: no cover - defensive
                 logger.error("Failed to build SQLite index: %s", exc)
                 self._is_loaded = False
                 return False
+
+            logger.info(
+                "SQLite index build complete: %s files, %s symbols",
+                stats.get("files"),
+                stats.get("symbols"),
+            )
+
+            if stats.get("timed_out"):
+                logger.warning(
+                    "Build timed out: %d of %d files processed",
+                    stats.get("files", 0),
+                    stats.get("total_files", 0),
+                )
+                self._is_loaded = False
+                return False
+
+            self._is_loaded = True
+            return True
 
     def load_index(self) -> bool:
         """Validate that an index database exists and schema is current."""

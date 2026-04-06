@@ -77,8 +77,8 @@ class SQLiteIndexBuilder(JSONIndexBuilder):
         """
         if max_workers is not None and max_workers < 1:
             raise ValueError("max_workers must be >= 1, got %d" % max_workers)
-        if timeout is not None and timeout < 0:
-            raise ValueError("timeout must be >= 0, got %d" % timeout)
+        if timeout is not None and timeout < 1:
+            raise ValueError("timeout must be >= 1, got %d" % timeout)
 
         logger.info("Building SQLite index (parallel=%s)...", parallel)
         start_time = time.time()
@@ -94,6 +94,8 @@ class SQLiteIndexBuilder(JSONIndexBuilder):
                 "files": 0,
                 "symbols": 0,
                 "languages": 0,
+                "timed_out": False,
+                "total_files": 0,
             }
 
         specialized_extensions = set(self.strategy_factory.get_specialized_extensions())
@@ -256,6 +258,8 @@ class SQLiteIndexBuilder(JSONIndexBuilder):
             "files": processed_files,
             "symbols": total_symbols,
             "languages": len(languages),
+            "timed_out": timed_out,
+            "total_files": total_files,
         }
 
     # Internal helpers -------------------------------------------------

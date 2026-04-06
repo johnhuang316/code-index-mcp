@@ -173,25 +173,32 @@ class IndexManagementService(BaseService):
 
         if effective_workers is not None and effective_workers < 1:
             raise ValueError("max_workers must be >= 1, got %d" % effective_workers)
-        if effective_timeout is not None and effective_timeout < 0:
-            raise ValueError("timeout must be >= 0, got %d" % effective_timeout)
+        if effective_timeout is not None and effective_timeout < 1:
+            raise ValueError("timeout must be >= 1, got %d" % effective_timeout)
 
         # Set project path in index manager with exclusions
         if not self._index_manager.set_project_path(self.base_path, excludes):
             raise RuntimeError("Failed to set project path in index manager")
 
-        # Rebuild the index
-        if not self._index_manager.refresh_index(
+        # Rebuild the index (returns False on timeout/partial build)
+        rebuild_ok = self._index_manager.refresh_index(
             max_workers=effective_workers,
             timeout=effective_timeout,
-        ):
-            raise RuntimeError("Failed to rebuild index")
+        )
 
         # Get stats for result
         stats = self._index_manager.get_index_stats()
         file_count = stats.get('indexed_files', 0)
 
         rebuild_time = time.time() - start_time
+
+        if not rebuild_ok:
+            return IndexRebuildResult(
+                file_count=file_count,
+                rebuild_time=rebuild_time,
+                status='partial',
+                message=f"Deep index built (partial: {file_count} files processed due to timeout)"
+            )
 
         return IndexRebuildResult(
             file_count=file_count,

@@ -272,6 +272,10 @@ class TestParallelBuildConcurrencySafety:
         assert stats_seq["files"] == stats_par["files"]
         assert stats_seq["symbols"] == stats_par["symbols"]
         assert stats_seq["languages"] == stats_par["languages"]
+        assert stats_seq["timed_out"] is False
+        assert stats_par["timed_out"] is False
+        assert stats_seq["total_files"] == stats_seq["files"]
+        assert stats_par["total_files"] == stats_par["files"]
 
     def test_parallel_build_with_many_workers(self, tmp_path):
         """Stress test: more workers than files should still work."""
@@ -284,6 +288,8 @@ class TestParallelBuildConcurrencySafety:
         # max_workers > file count is fine; builder clamps to file count
         stats = builder.build_index(parallel=True, max_workers=16)
         assert stats["files"] == 1
+        assert stats["timed_out"] is False
+        assert stats["total_files"] == 1
 
 
 # ---------------------------------------------------------------------------
@@ -306,17 +312,14 @@ class TestParameterValidation:
 
     def test_build_index_rejects_negative_timeout(self, tmp_path):
         builder, _ = _make_builder(tmp_path)
-        with pytest.raises(ValueError, match="timeout must be >= 0"):
+        with pytest.raises(ValueError, match="timeout must be >= 1"):
             builder.build_index(parallel=True, timeout=-5)
 
-    def test_build_index_accepts_zero_timeout(self, tmp_path):
-        """timeout=0 is valid (means no waiting), should not raise ValueError."""
+    def test_build_index_rejects_zero_timeout(self, tmp_path):
+        """timeout=0 causes as_completed to return nothing; reject it."""
         builder, _ = _make_builder(tmp_path)
-        # Create a file so the builder has work to do
-        project_dir = tmp_path / "project"
-        (project_dir / "a.py").write_text("x = 1\n")
-        stats = builder.build_index(parallel=True, timeout=0, max_workers=1)
-        assert stats["files"] >= 0  # may timeout but should not raise ValueError
+        with pytest.raises(ValueError, match="timeout must be >= 1"):
+            builder.build_index(parallel=True, timeout=0)
 
 
 # ---------------------------------------------------------------------------
@@ -389,3 +392,53 @@ class TestIndexingConfigRoundTrip:
         settings.update_indexing_config({"max_workers": 8})
         config = settings.get_indexing_config()
         assert config["max_workers"] == 8
+
+    def test_indexing_config_has_no_parallel_field(self, tmp_path):
+        from code_index_mcp.project_settings import ProjectSettings
+
+        settings = ProjectSettings(str(tmp_path))
+        config = settings.get_indexing_config()
+        assert "parallel" not in config
+
+
+# ---------------------------------------------------------------------------
+# Partial build message propagation
+# ---------------------------------------------------------------------------
+
+
+class TestPartialBuildMessage:
+    """Verify _execute_rebuild_workflow surfaces timeout info."""
+
+    def test_partial_build_produces_partial_status(self, tmp_path):
+        from code_index_mcp.services.index_management_service import IndexManagementService
+
+        project_dir = tmp_path / "proj"
+        project_dir.mkdir()
+        (project_dir / "a.py").write_text("x = 1\n")
+
+        service = IndexManagementService.__new__(IndexManagementService)
+
+        mock_helper = MagicMock()
+        mock_helper.base_path = str(project_dir)
+        mock_helper.settings.get_indexing_config.return_value = {
+            "max_workers": None,
+            "timeout_seconds": None,
+        }
+        mock_helper.settings.get_file_watcher_config.return_value = {}
+        service.helper = mock_helper
+
+        mock_mgr = MagicMock()
+        mock_mgr.set_project_path.return_value = True
+        # refresh_index returns False when timed out
+        mock_mgr.refresh_index.return_value = False
+        mock_mgr.get_index_stats.return_value = {
+            "indexed_files": 3,
+            "total_symbols": 10,
+        }
+        service._index_manager = mock_mgr
+        service._shallow_manager = MagicMock()
+
+        result = service._execute_rebuild_workflow()
+        assert result.status == "partial"
+        assert "partial" in result.message.lower()
+        assert "3" in result.message
