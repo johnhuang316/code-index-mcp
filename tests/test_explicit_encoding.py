@@ -205,5 +205,52 @@ class TestGBKProjectEndToEnd(unittest.TestCase):
         self.assertIn("中华人民共和国", content)
 
 
+class TestIndexingWithEncoding(unittest.TestCase):
+    """Verify encoding is wired through the indexing lifecycle."""
+
+    def setUp(self):
+        self.tmp_dir = tempfile.mkdtemp()
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp_dir)
+
+    def test_shallow_index_manager_accepts_encoding(self):
+        from code_index_mcp.indexing.shallow_index_manager import ShallowIndexManager
+
+        text = "# 这是GBK编码的文件\ndef hello(): pass\n"
+        path = os.path.join(self.tmp_dir, "test.py")
+        with open(path, "wb") as f:
+            f.write(text.encode("gbk"))
+
+        mgr = ShallowIndexManager()
+        self.assertTrue(mgr.set_project_path(self.tmp_dir, encoding="gbk"))
+        self.assertTrue(mgr.build_index())
+        files = mgr.get_file_list()
+        self.assertTrue(any("test.py" in f for f in files))
+
+    def test_shallow_index_manager_encoding_none_defaults_to_utf8(self):
+        from code_index_mcp.indexing.shallow_index_manager import ShallowIndexManager
+
+        path = os.path.join(self.tmp_dir, "hello.py")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write("print('hello')\n")
+
+        mgr = ShallowIndexManager()
+        self.assertTrue(mgr.set_project_path(self.tmp_dir, encoding=None))
+        self.assertTrue(mgr.build_index())
+        files = mgr.get_file_list()
+        self.assertTrue(any("hello.py" in f for f in files))
+
+    def test_shallow_index_manager_passes_encoding_to_builder(self):
+        """Verify set_project_path forwards encoding to JSONIndexBuilder."""
+        from code_index_mcp.indexing.shallow_index_manager import ShallowIndexManager
+
+        mgr = ShallowIndexManager()
+        mgr.set_project_path(self.tmp_dir, encoding="shift_jis")
+        self.assertIsNotNone(mgr.index_builder)
+        # The builder stores encoding as _encoding
+        self.assertEqual(mgr.index_builder._encoding, "shift_jis")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -9,7 +9,7 @@ import logging
 import os
 import json
 
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
@@ -58,11 +58,12 @@ class IndexManagementService(BaseService):
         # Business validation
         self._validate_rebuild_request()
 
-        # Get user-configured exclude patterns
+        # Get user-configured exclude patterns and encoding
         excludes = self._get_exclude_patterns()
+        enc = self._get_default_encoding()
 
         # Shallow rebuild only (fast path)
-        if not self._shallow_manager.set_project_path(self.base_path, excludes):
+        if not self._shallow_manager.set_project_path(self.base_path, excludes, encoding=enc):
             raise RuntimeError("Failed to set project path (shallow) in index manager")
         if not self._shallow_manager.build_index():
             raise RuntimeError("Failed to rebuild shallow index")
@@ -111,6 +112,19 @@ class IndexManagementService(BaseService):
         """
         # Business rule: Project must be set up
         self._require_project_setup()
+
+    def _get_default_encoding(self) -> Optional[str]:
+        """Read default encoding from project settings.
+
+        Returns:
+            The configured default encoding, or ``None`` for UTF-8.
+        """
+        if not self.settings:
+            return None
+        try:
+            return self.settings.get_encoding_config().get("default_encoding")
+        except Exception:  # noqa: BLE001 - fallback if config fails
+            return None
 
     def _get_exclude_patterns(self) -> List[str]:
         """Read exclude patterns from project settings for indexing.
@@ -171,8 +185,9 @@ class IndexManagementService(BaseService):
         """
         start_time = time.time()
 
-        # Get user-configured exclude patterns
+        # Get user-configured exclude patterns and encoding
         excludes = self._get_exclude_patterns()
+        enc = self._get_default_encoding()
 
         # Merge explicit params with persistent settings
         indexing_cfg = self._get_indexing_config()
@@ -184,8 +199,8 @@ class IndexManagementService(BaseService):
         if effective_timeout is not None and effective_timeout < 1:
             raise ValueError("timeout must be >= 1, got %d" % effective_timeout)
 
-        # Set project path in index manager with exclusions
-        if not self._index_manager.set_project_path(self.base_path, excludes):
+        # Set project path in index manager with exclusions and encoding
+        if not self._index_manager.set_project_path(self.base_path, excludes, encoding=enc):
             raise RuntimeError("Failed to set project path in index manager")
 
         # Rebuild the index (returns False on timeout/partial build)
@@ -258,11 +273,12 @@ class IndexManagementService(BaseService):
         # Ensure project is set up
         self._require_project_setup()
 
-        # Get user-configured exclude patterns
+        # Get user-configured exclude patterns and encoding
         excludes = self._get_exclude_patterns()
+        enc = self._get_default_encoding()
 
-        # Initialize manager with current base path and exclusions
-        if not self._shallow_manager.set_project_path(self.base_path, excludes):
+        # Initialize manager with current base path, exclusions and encoding
+        if not self._shallow_manager.set_project_path(self.base_path, excludes, encoding=enc):
             raise RuntimeError("Failed to set project path in index manager")
 
         # Build shallow index

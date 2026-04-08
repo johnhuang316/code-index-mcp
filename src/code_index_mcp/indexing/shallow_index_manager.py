@@ -34,13 +34,15 @@ class ShallowIndexManager:
         self._file_list: Optional[List[str]] = None
         self._lock = threading.RLock()
 
-    def set_project_path(self, project_path: str, additional_excludes: Optional[List[str]] = None) -> bool:
+    def set_project_path(self, project_path: str, additional_excludes: Optional[List[str]] = None, encoding: Optional[str] = None) -> bool:
         """Configure project path for shallow indexing.
 
         Args:
             project_path: Path to the project directory to index
             additional_excludes: Optional list of additional directory/file
                 patterns to exclude from indexing (e.g., ['vendor', 'custom_deps'])
+            encoding: Optional default encoding for reading files (e.g., 'gbk',
+                'shift_jis'). When ``None``, UTF-8 is used.
 
         Returns:
             True if configuration succeeded, False otherwise
@@ -56,7 +58,7 @@ class ShallowIndexManager:
                     return False
 
                 self.project_path = project_path
-                self.index_builder = JSONIndexBuilder(project_path, additional_excludes)
+                self.index_builder = JSONIndexBuilder(project_path, additional_excludes, encoding=encoding)
 
                 project_hash = hashlib.md5(project_path.encode()).hexdigest()[:12]
                 self.temp_dir = os.path.join(tempfile.gettempdir(), SETTINGS_DIR, project_hash)

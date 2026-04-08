@@ -5,7 +5,7 @@ This service handles the business logic for project initialization, configuratio
 and lifecycle management across the current indexing backends.
 """
 import logging
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from dataclasses import dataclass
 from contextlib import contextmanager
 
@@ -53,6 +53,19 @@ class ProjectManagementService(BaseService):
     @contextmanager
     def _noop_operation(self, *_args, **_kwargs):
         yield
+
+    def _get_default_encoding(self) -> Optional[str]:
+        """Read default encoding from project settings.
+
+        Returns:
+            The configured default encoding, or ``None`` for UTF-8.
+        """
+        if not self.settings:
+            return None
+        try:
+            return self.settings.get_encoding_config().get("default_encoding")
+        except Exception:  # noqa: BLE001 - fallback if config fails
+            return None
 
     def _get_exclude_patterns(self) -> List[str]:
         """Read exclude patterns from project settings for indexing.
@@ -200,11 +213,12 @@ class ProjectManagementService(BaseService):
         Returns:
             Dictionary with initialization results
         """
-        # Get user-configured exclude patterns
+        # Get user-configured exclude patterns and encoding
         excludes = self._get_exclude_patterns()
+        enc = self._get_default_encoding()
 
-        # Set project path in shallow manager with exclusions
-        if not self._shallow_manager.set_project_path(project_path, excludes):
+        # Set project path in shallow manager with exclusions and encoding
+        if not self._shallow_manager.set_project_path(project_path, excludes, encoding=enc):
             raise RuntimeError(f"Failed to set project path (shallow): {project_path}")
 
         # Update context
@@ -299,8 +313,9 @@ class ProjectManagementService(BaseService):
                 return "monitoring_disabled"
 
         try:
-            # Capture current exclude patterns for use in the rebuild callback
+            # Capture current exclude patterns and encoding for use in the rebuild callback
             rebuild_excludes = self._get_exclude_patterns()
+            rebuild_encoding = self._get_default_encoding()
 
             # Create rebuild callback that uses the deep index manager
             def rebuild_callback():
@@ -309,7 +324,7 @@ class ProjectManagementService(BaseService):
                     logger.debug(f"Starting shallow index rebuild for: {project_path}")
                     # Business logic: File changed, rebuild using SHALLOW index manager
                     try:
-                        if not self._shallow_manager.set_project_path(project_path, rebuild_excludes):
+                        if not self._shallow_manager.set_project_path(project_path, rebuild_excludes, encoding=rebuild_encoding):
                             logger.warning("Shallow manager set_project_path failed")
                             return False
                         if self._shallow_manager.build_index():
