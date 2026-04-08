@@ -81,7 +81,7 @@ class ProjectManagementService(BaseService):
             pass
         return patterns
 
-    def initialize_project(self, path: str) -> str:
+    def initialize_project(self, path: str, *, default_encoding: str | None = None) -> str:
         """
         Initialize a project with comprehensive business logic.
 
@@ -91,6 +91,8 @@ class ProjectManagementService(BaseService):
 
         Args:
             path: Project directory path to initialize
+            default_encoding: Default file encoding for this project (e.g., "gbk",
+                "shift_jis"). When set, all file reads use this encoding.
 
         Returns:
             Success message with project information
@@ -102,7 +104,7 @@ class ProjectManagementService(BaseService):
         self._validate_initialization_request(path)
 
         # Business workflow: Execute initialization
-        result = self._execute_initialization_workflow(path)
+        result = self._execute_initialization_workflow(path, default_encoding=default_encoding)
 
         # Business result formatting
         return self._format_initialization_result(result)
@@ -122,18 +124,23 @@ class ProjectManagementService(BaseService):
         if error:
             raise ValueError(error)
 
-    def _execute_initialization_workflow(self, path: str) -> ProjectInitializationResult:
+    def _execute_initialization_workflow(self, path: str, *, default_encoding: str | None = None) -> ProjectInitializationResult:
         """
         Execute the core project initialization business workflow.
 
         Args:
             path: Project path to initialize
+            default_encoding: Default file encoding for this project
 
         Returns:
             ProjectInitializationResult with initialization data
         """
         # Business step 1: Initialize config tool
         self._config_tool.initialize_settings(path)
+
+        # Persist encoding configuration if provided
+        if default_encoding is not None and self.settings:
+            self.settings.update_encoding_config({"default_encoding": default_encoding})
 
         # Propagate the freshly-created ProjectSettings to the lifespan
         # context so that every service accessing self.settings (via

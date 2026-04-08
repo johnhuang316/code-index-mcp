@@ -107,5 +107,40 @@ class TestOpenFileWithEncoding(unittest.TestCase):
                 f.read()
 
 
+class TestEncodingConfig(unittest.TestCase):
+    def setUp(self):
+        self.tmp_dir = tempfile.mkdtemp()
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp_dir)
+
+    def test_default_encoding_is_none(self):
+        from code_index_mcp.project_settings import ProjectSettings
+        settings = ProjectSettings(self.tmp_dir)
+        config = settings.get_encoding_config()
+        self.assertIsNone(config["default_encoding"])
+
+    def test_update_and_read_encoding(self):
+        from code_index_mcp.project_settings import ProjectSettings
+        settings = ProjectSettings(self.tmp_dir)
+        settings.update_encoding_config({"default_encoding": "gbk"})
+        config = settings.get_encoding_config()
+        self.assertEqual(config["default_encoding"], "gbk")
+
+    def test_round_trip_persistence(self):
+        from code_index_mcp.project_settings import ProjectSettings
+        settings = ProjectSettings(self.tmp_dir)
+        settings.update_encoding_config({"default_encoding": "shift_jis"})
+        fresh = ProjectSettings(self.tmp_dir)
+        self.assertEqual(fresh.get_encoding_config()["default_encoding"], "shift_jis")
+
+    def test_clear_encoding(self):
+        from code_index_mcp.project_settings import ProjectSettings
+        settings = ProjectSettings(self.tmp_dir)
+        settings.update_encoding_config({"default_encoding": "gbk"})
+        settings.update_encoding_config({"default_encoding": None})
+        self.assertIsNone(settings.get_encoding_config()["default_encoding"])
+
+
 if __name__ == "__main__":
     unittest.main()
