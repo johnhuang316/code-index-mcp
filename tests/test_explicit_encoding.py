@@ -280,5 +280,13 @@ class TestRipgrepEncodingFlag(unittest.TestCase):
             self.assertNotIn("--encoding", cmd)
 
 
+class TestAnalyzeFileWithEncoding(unittest.TestCase):
+    def test_analyze_file_accepts_encoding(self):
+        from code_index_mcp.services.code_intelligence_service import CodeIntelligenceService
+        import inspect
+        sig = inspect.signature(CodeIntelligenceService.analyze_file)
+        self.assertIn("encoding", sig.parameters)
+
+
 if __name__ == "__main__":
     unittest.main()

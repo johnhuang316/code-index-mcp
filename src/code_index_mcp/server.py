@@ -395,7 +395,7 @@ def get_file_summary(file_path: str, ctx: Context, encoding: str | None = None) 
     Args:
         encoding: File encoding override (e.g., "gbk", "shift_jis"). Omit to use project default.
     """
-    return CodeIntelligenceService(ctx).analyze_file(file_path)
+    return CodeIntelligenceService(ctx).analyze_file(file_path, encoding=encoding)
 
 
 @mcp.tool()

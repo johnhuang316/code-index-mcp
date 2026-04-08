@@ -33,7 +33,7 @@ class CodeIntelligenceService(BaseService):
         super().__init__(ctx)
         self._filesystem_tool = FileSystemTool()
 
-    def analyze_file(self, file_path: str) -> Dict[str, Any]:
+    def analyze_file(self, file_path: str, encoding: str | None = None) -> Dict[str, Any]:
         """
         Analyze a file and return comprehensive intelligence.
 
@@ -43,6 +43,7 @@ class CodeIntelligenceService(BaseService):
 
         Args:
             file_path: Path to the file to analyze (relative to project root)
+            encoding: Explicit file encoding. When None, resolved from project settings.
 
         Returns:
             Dictionary with comprehensive file analysis
@@ -50,6 +51,14 @@ class CodeIntelligenceService(BaseService):
         Raises:
             ValueError: If file path is invalid or analysis fails
         """
+        # Resolve encoding from settings when not provided
+        enc = encoding
+        if enc is None and self.settings:
+            try:
+                enc = self.settings.get_encoding_config().get("default_encoding")
+            except Exception:
+                pass
+
         # Business validation
         self._validate_analysis_request(file_path)
 
