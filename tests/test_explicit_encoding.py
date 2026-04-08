@@ -160,5 +160,50 @@ class TestBasicSearchWithEncoding(unittest.TestCase):
         self.assertTrue(len(results) > 0)
 
 
+class TestGBKProjectEndToEnd(unittest.TestCase):
+    """Prove a GBK project works end-to-end with default_encoding."""
+
+    def setUp(self):
+        self.tmp_dir = tempfile.mkdtemp()
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp_dir)
+
+    def test_gbk_file_indexed_and_searchable(self):
+        from code_index_mcp.indexing.sqlite_index_manager import SQLiteIndexManager
+        from code_index_mcp.search.basic import BasicSearchStrategy
+
+        text = "# 这是GBK编码\ndef 计算总和(numbers):\n    return sum(numbers)\n"
+        path = os.path.join(self.tmp_dir, "main.py")
+        with open(path, "wb") as f:
+            f.write(text.encode("gbk"))
+
+        mgr = SQLiteIndexManager()
+        mgr.set_project_path(self.tmp_dir, encoding="gbk")
+        mgr.build_index()
+        stats = mgr.get_index_stats()
+        self.assertEqual(stats["indexed_files"], 1)
+
+        strategy = BasicSearchStrategy()
+        results = strategy.search("计算", self.tmp_dir, encoding="gbk")
+        self.assertTrue(len(results) > 0)
+
+    def test_encoding_config_persists_and_is_used(self):
+        from code_index_mcp.project_settings import ProjectSettings
+        from code_index_mcp.utils.encoding import read_file_with_encoding
+
+        settings = ProjectSettings(self.tmp_dir)
+        settings.update_encoding_config({"default_encoding": "gbk"})
+
+        text = "# 中华人民共和国\n"
+        path = os.path.join(self.tmp_dir, "test.py")
+        with open(path, "wb") as f:
+            f.write(text.encode("gbk"))
+
+        enc = settings.get_encoding_config()["default_encoding"]
+        content = read_file_with_encoding(path, encoding=enc)
+        self.assertIn("中华人民共和国", content)
+
+
 if __name__ == "__main__":
     unittest.main()
