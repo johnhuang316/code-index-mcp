@@ -27,7 +27,8 @@ class SearchService(BaseService):
         fuzzy: bool = False,
         regex: Optional[bool] = None,
         start_index: int = 0,
-        max_results: Optional[int] = 10
+        max_results: Optional[int] = 10,
+        encoding: Optional[str] = None
     ) -> Dict[str, Any]:
         """Search for code patterns in the project."""
         self._require_project_setup()
@@ -61,6 +62,14 @@ class SearchService(BaseService):
                 "basic search only supports literal and fuzzy matching"
             )
 
+        # Resolve encoding from settings when not explicitly provided
+        enc = encoding
+        if enc is None and self.settings:
+            try:
+                enc = self.settings.get_encoding_config().get("default_encoding")
+            except Exception:
+                pass
+
         try:
             results = strategy.search(
                 pattern=pattern,
@@ -70,7 +79,8 @@ class SearchService(BaseService):
                 file_pattern=file_pattern,
                 fuzzy=fuzzy,
                 regex=regex,
-                exclude_patterns=self.additional_exclude_patterns
+                exclude_patterns=self.additional_exclude_patterns,
+                encoding=enc
             )
             formatted_results, pagination = self._paginate_results(
                 results,

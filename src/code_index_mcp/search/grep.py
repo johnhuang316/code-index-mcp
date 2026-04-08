@@ -61,6 +61,7 @@ class GrepStrategy(SearchStrategy):
         fuzzy: bool = False,
         regex: bool = False,
         exclude_patterns: Optional[List[str]] = None,
+        encoding: Optional[str] = None,
     ) -> Dict[str, List[Tuple[int, str]]]:
         """
         Execute a search using git grep (in a git repo) or plain grep.

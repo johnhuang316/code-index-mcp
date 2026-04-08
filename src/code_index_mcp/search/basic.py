@@ -10,6 +10,7 @@ from typing import Dict, List, Optional, Tuple
 import pathspec
 
 from .base import SearchStrategy, create_word_boundary_pattern
+from ..utils.encoding import open_file_with_encoding
 
 class BasicSearchStrategy(SearchStrategy):
     """
@@ -59,7 +60,8 @@ class BasicSearchStrategy(SearchStrategy):
         file_pattern: Optional[str] = None,
         fuzzy: bool = False,
         regex: bool = False,
-        exclude_patterns: Optional[List[str]] = None
+        exclude_patterns: Optional[List[str]] = None,
+        encoding: Optional[str] = None
     ) -> Dict[str, List[Tuple[int, str]]]:
         """
         Execute a basic, line-by-line search.
@@ -122,14 +124,14 @@ class BasicSearchStrategy(SearchStrategy):
                     continue
 
                 try:
-                    with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                    with open_file_with_encoding(str(file_path), encoding=encoding) as f:
                         for line_num, line in enumerate(f, 1):
                             if search_regex.search(line):
                                 content = line.rstrip('\n')
                                 if rel_path not in results:
                                     results[rel_path] = []
                                 results[rel_path].append((line_num, content))
-                except (UnicodeDecodeError, PermissionError, OSError):
+                except (UnicodeDecodeError, PermissionError, OSError, ValueError):
                     continue
                 except Exception:
                     continue

@@ -5,7 +5,6 @@ This replaces the monolithic parser implementation with a clean,
 maintainable Strategy pattern architecture.
 """
 
-import io
 import logging
 import os
 import time
@@ -17,6 +16,7 @@ from typing import Dict, List, Optional, Any, Tuple
 
 from .strategies import StrategyFactory
 from .models import SymbolInfo, FileInfo
+from ..utils.encoding import read_file_with_encoding
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +51,7 @@ class JSONIndexBuilder:
     4. Assembling the final JSON index
     """
 
-    def __init__(self, project_path: str, additional_excludes: Optional[List[str]] = None):
+    def __init__(self, project_path: str, additional_excludes: Optional[List[str]] = None, encoding: Optional[str] = None):
         from ..utils import FileFilter
 
         # Input validation
@@ -69,6 +69,7 @@ class JSONIndexBuilder:
         self.in_memory_index: Optional[Dict[str, Any]] = None
         self.strategy_factory = StrategyFactory()
         self.file_filter = FileFilter(additional_excludes)
+        self._encoding: Optional[str] = encoding
 
         logger.info(f"Initialized JSON index builder for {project_path}")
         strategy_info = self.strategy_factory.get_strategy_info()
@@ -104,24 +105,14 @@ class JSONIndexBuilder:
             except OSError:
                 pass
 
-            with open(file_path, "rb") as raw:
-                sample = raw.read(8192)
-                if b"\x00" in sample:
-                    logger.info("Skipping binary file (NUL bytes): %s", rel_path)
-                    return None
-                raw.seek(0)
-
-                with io.TextIOWrapper(raw, encoding="utf-8", errors="ignore") as f:
-                    if use_lightweight:
-                        # Read only first N lines for lightweight mode
-                        lines = []
-                        for i, line in enumerate(f):
-                            if i >= LIGHTWEIGHT_MAX_LINES:
-                                break
-                            lines.append(line)
-                        content = ''.join(lines)
-                    else:
-                        content = f.read()
+            try:
+                if use_lightweight:
+                    content = read_file_with_encoding(file_path, encoding=self._encoding, max_lines=LIGHTWEIGHT_MAX_LINES)
+                else:
+                    content = read_file_with_encoding(file_path, encoding=self._encoding)
+            except (ValueError, UnicodeDecodeError, LookupError):
+                logger.info("Skipping unreadable file: %s", rel_path)
+                return None
 
             # Check line count for lightweight mode
             line_count = content.count('\n')

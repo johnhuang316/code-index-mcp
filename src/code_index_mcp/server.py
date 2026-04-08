@@ -348,11 +348,15 @@ def search_code_advanced(
     regex: bool | None = None,
     start_index: int = 0,
     max_results: int | None = 10,
+    encoding: str | None = None,
 ) -> dict[str, Any]:
     """
 Search for code pattern with pagination. Auto-selects best search tool (ugrep/ripgrep/ag/grep).
 Supports glob file_pattern (e.g., "*.py"), explicit regex mode, and fuzzy matching (ugrep only).
 Regex matching requires passing regex=True and may require an external search tool.
+
+Args:
+    encoding: File encoding override (e.g., "gbk", "shift_jis"). Omit to use project default.
 """
     return SearchService(ctx).search_code(
         pattern=pattern,
@@ -363,6 +367,7 @@ Regex matching requires passing regex=True and may require an external search to
         regex=regex,
         start_index=start_index,
         max_results=max_results,
+        encoding=encoding,
     )
 
 
@@ -379,13 +384,16 @@ Supports path patterns (*.py, test_*.js) and filename-only matching (README.md).
 @mcp.tool()
 @handle_mcp_tool_errors(return_type="dict")
 @with_concurrency_limit
-def get_file_summary(file_path: str, ctx: Context) -> dict[str, Any]:
+def get_file_summary(file_path: str, ctx: Context, encoding: str | None = None) -> dict[str, Any]:
     """
     Get a summary of a specific file, including:
     - Line count
     - Function/class definitions (for supported languages)
     - Import statements
     - Basic complexity metrics
+
+    Args:
+        encoding: File encoding override (e.g., "gbk", "shift_jis"). Omit to use project default.
     """
     return CodeIntelligenceService(ctx).analyze_file(file_path)
 
@@ -393,7 +401,7 @@ def get_file_summary(file_path: str, ctx: Context) -> dict[str, Any]:
 @mcp.tool()
 @handle_mcp_tool_errors(return_type="dict")
 @with_concurrency_limit
-def get_symbol_body(file_path: str, symbol_name: str, ctx: Context) -> dict[str, Any]:
+def get_symbol_body(file_path: str, symbol_name: str, ctx: Context, encoding: str | None = None) -> dict[str, Any]:
     """
     Get the source code body of a specific symbol (function, method, or class).
 
@@ -403,6 +411,7 @@ def get_symbol_body(file_path: str, symbol_name: str, ctx: Context) -> dict[str,
     Args:
         file_path: Path to the file containing the symbol
         symbol_name: Name of the symbol to retrieve (e.g., "process_data", "MyClass.my_method")
+        encoding: File encoding override (e.g., "gbk", "shift_jis"). Omit to use project default.
 
     Returns:
         Dictionary containing:
@@ -416,7 +425,7 @@ def get_symbol_body(file_path: str, symbol_name: str, ctx: Context) -> dict[str,
         - docstring: Documentation string (if available)
         - called_by: List of symbols that call this symbol
     """
-    return CodeIntelligenceService(ctx).get_symbol_body(file_path, symbol_name)
+    return CodeIntelligenceService(ctx).get_symbol_body(file_path, symbol_name, encoding=encoding)
 
 
 @mcp.tool()

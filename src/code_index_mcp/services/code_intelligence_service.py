@@ -10,6 +10,7 @@ import os
 from typing import Dict, Any, List
 
 from .base_service import BaseService
+from ..utils.encoding import read_file_with_encoding
 
 # Configuration for get_symbol_body (conservative for stability)
 # Philosophy: Return minimal data reliably, use line numbers to drill down
@@ -102,7 +103,7 @@ class CodeIntelligenceService(BaseService):
             if not file_path or '..' in file_path:
                 raise ValueError(f"Invalid file path: {file_path}")
 
-    def get_symbol_body(self, file_path: str, symbol_name: str) -> Dict[str, Any]:
+    def get_symbol_body(self, file_path: str, symbol_name: str, encoding: str | None = None) -> Dict[str, Any]:
         """
         Get the code body of a specific symbol from a file.
 
@@ -112,6 +113,7 @@ class CodeIntelligenceService(BaseService):
         Args:
             file_path: Path to the file containing the symbol
             symbol_name: Name of the symbol (function, method, or class)
+            encoding: Explicit file encoding. When None, resolved from project settings.
 
         Returns:
             Dictionary containing:
@@ -183,8 +185,14 @@ class CodeIntelligenceService(BaseService):
             else:
                 full_path = file_path
 
-            with open(full_path, 'r', encoding='utf-8') as f:
-                lines = f.readlines()
+            enc = encoding
+            if enc is None and self.settings:
+                try:
+                    enc = self.settings.get_encoding_config().get("default_encoding")
+                except Exception:
+                    pass
+            content_str = read_file_with_encoding(full_path, encoding=enc)
+            lines = content_str.splitlines(keepends=True)
 
             # Extract the symbol's code (1-indexed)
             start_idx = line - 1

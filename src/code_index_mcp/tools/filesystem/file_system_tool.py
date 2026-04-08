@@ -8,6 +8,8 @@ import os
 from typing import Dict, Any, Optional
 from pathlib import Path
 
+from ...utils.encoding import read_file_with_encoding as _read_file
+
 
 class FileSystemTool:
     """
@@ -57,7 +59,7 @@ class FileSystemTool:
 
     def read_file_content(self, file_path: str) -> str:
         """
-        Read file content with intelligent encoding detection.
+        Read file content with encoding-aware reading.
 
         Args:
             file_path: Absolute path to the file
@@ -69,26 +71,7 @@ class FileSystemTool:
             FileNotFoundError: If file doesn't exist
             ValueError: If file cannot be decoded
         """
-        if not os.path.exists(file_path):
-            raise FileNotFoundError(f"File not found: {file_path}")
-
-        # Try UTF-8 first (most common)
-        try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                return f.read()
-        except UnicodeDecodeError:
-            pass
-
-        # Try other common encodings
-        encodings = ['utf-8-sig', 'latin-1', 'cp1252', 'iso-8859-1']
-        for encoding in encodings:
-            try:
-                with open(file_path, 'r', encoding=encoding) as f:
-                    return f.read()
-            except UnicodeDecodeError:
-                continue
-
-        raise ValueError(f"Could not decode file {file_path} with any supported encoding")
+        return _read_file(file_path)
 
     def count_lines(self, file_path: str) -> int:
         """

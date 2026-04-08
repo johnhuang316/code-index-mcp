@@ -142,5 +142,23 @@ class TestEncodingConfig(unittest.TestCase):
         self.assertIsNone(settings.get_encoding_config()["default_encoding"])
 
 
+class TestBasicSearchWithEncoding(unittest.TestCase):
+    def setUp(self):
+        self.tmp_dir = tempfile.mkdtemp()
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp_dir)
+
+    def test_search_finds_gbk_content(self):
+        from code_index_mcp.search.basic import BasicSearchStrategy
+        text = "# \u8fd9\u662fGBK\u6587\u4ef6\ndef \u8ba1\u7b97(): pass\n"
+        path = os.path.join(self.tmp_dir, "test.py")
+        with open(path, "wb") as f:
+            f.write(text.encode("gbk"))
+        strategy = BasicSearchStrategy()
+        results = strategy.search("\u8ba1\u7b97", self.tmp_dir, encoding="gbk")
+        self.assertTrue(len(results) > 0)
+
+
 if __name__ == "__main__":
     unittest.main()

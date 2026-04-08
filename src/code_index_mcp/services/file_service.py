@@ -10,6 +10,7 @@ Usage:
 
 import os
 from .base_service import BaseService
+from ..utils.encoding import read_file_with_encoding
 
 
 class FileService(BaseService):
@@ -20,12 +21,14 @@ class FileService(BaseService):
     Complex analysis functionality has been moved to CodeIntelligenceService.
     """
 
-    def get_file_content(self, file_path: str) -> str:
+    def get_file_content(self, file_path: str, encoding: str | None = None) -> str:
         """
         Get file content for MCP resource.
 
         Args:
             file_path: Path to the file (relative to project root)
+            encoding: Explicit encoding to use. When None, resolved from
+                project settings or defaults to UTF-8.
 
         Returns:
             File content as string
@@ -40,23 +43,16 @@ class FileService(BaseService):
         # Build full path
         full_path = os.path.join(self.base_path, file_path)
 
-        try:
-            # Try UTF-8 first (most common)
-            with open(full_path, 'r', encoding='utf-8') as f:
-                return f.read()
-        except UnicodeDecodeError:
-            # Try other encodings if UTF-8 fails
-            encodings = ['utf-8-sig', 'latin-1', 'cp1252', 'iso-8859-1']
-            for encoding in encodings:
-                try:
-                    with open(full_path, 'r', encoding=encoding) as f:
-                        return f.read()
-                except UnicodeDecodeError:
-                    continue
+        enc = encoding
+        if enc is None and self.settings:
+            try:
+                enc = self.settings.get_encoding_config().get("default_encoding")
+            except Exception:
+                pass
 
-            raise ValueError(
-                f"Could not decode file {file_path}. File may have "
-                f"unsupported encoding."
-            ) from None
+        try:
+            return read_file_with_encoding(full_path, encoding=enc)
+        except ValueError as e:
+            raise ValueError(f"Could not decode file {file_path}. {e}") from e
         except (FileNotFoundError, PermissionError, OSError) as e:
             raise FileNotFoundError(f"Error reading file: {e}") from e

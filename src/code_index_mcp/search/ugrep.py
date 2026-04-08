@@ -43,7 +43,8 @@ class UgrepStrategy(SearchStrategy):
         file_pattern: Optional[str] = None,
         fuzzy: bool = False,
         regex: bool = False,
-        exclude_patterns: Optional[List[str]] = None
+        exclude_patterns: Optional[List[str]] = None,
+        encoding: Optional[str] = None
     ) -> Dict[str, List[Tuple[int, str]]]:
         """
         Execute a search using the 'ug' command-line tool.
