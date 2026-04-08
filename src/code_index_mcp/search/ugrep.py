@@ -59,6 +59,9 @@ class UgrepStrategy(SearchStrategy):
             regex: Enable regex pattern matching
             exclude_patterns: Optional list of glob patterns to exclude
         """
+        # Note: encoding parameter accepted for interface compatibility.
+        # This tool does not support encoding flags; non-UTF-8 content
+        # may not be matched correctly.
         if not self.is_available():
             return {"error": "ugrep (ug) command not found."}
 

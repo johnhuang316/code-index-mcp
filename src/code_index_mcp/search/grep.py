@@ -76,6 +76,9 @@ class GrepStrategy(SearchStrategy):
             regex: Enable regex pattern matching
             exclude_patterns: Additional patterns to exclude (dirs end with '/')
         """
+        # Note: encoding parameter accepted for interface compatibility.
+        # This tool does not support encoding flags; non-UTF-8 content
+        # may not be matched correctly.
         use_git = self._is_git_repo(base_path)
 
         if use_git:

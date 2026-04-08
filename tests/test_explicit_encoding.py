@@ -252,5 +252,33 @@ class TestIndexingWithEncoding(unittest.TestCase):
         self.assertEqual(mgr.index_builder._encoding, "shift_jis")
 
 
+class TestRipgrepEncodingFlag(unittest.TestCase):
+    def test_encoding_flag_in_command(self):
+        from code_index_mcp.search.ripgrep import RipgrepStrategy
+        from unittest.mock import patch, MagicMock
+        strategy = RipgrepStrategy()
+        mock_result = MagicMock()
+        mock_result.stdout = ""
+        mock_result.returncode = 1
+        with patch("code_index_mcp.search.ripgrep.subprocess.run", return_value=mock_result) as mock_run:
+            strategy.search("test", "/tmp", encoding="gbk")
+            cmd = mock_run.call_args[0][0]
+            self.assertIn("--encoding", cmd)
+            idx = cmd.index("--encoding")
+            self.assertEqual(cmd[idx + 1], "gbk")
+
+    def test_no_encoding_flag_when_none(self):
+        from code_index_mcp.search.ripgrep import RipgrepStrategy
+        from unittest.mock import patch, MagicMock
+        strategy = RipgrepStrategy()
+        mock_result = MagicMock()
+        mock_result.stdout = ""
+        mock_result.returncode = 1
+        with patch("code_index_mcp.search.ripgrep.subprocess.run", return_value=mock_result) as mock_run:
+            strategy.search("test", "/tmp")
+            cmd = mock_run.call_args[0][0]
+            self.assertNotIn("--encoding", cmd)
+
+
 if __name__ == "__main__":
     unittest.main()

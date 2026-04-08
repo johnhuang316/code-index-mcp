@@ -50,6 +50,9 @@ class AgStrategy(SearchStrategy):
             fuzzy: Enable word boundary matching (not true fuzzy search)
             regex: Enable regex pattern matching
         """
+        # Note: encoding parameter accepted for interface compatibility.
+        # This tool does not support encoding flags; non-UTF-8 content
+        # may not be matched correctly.
         # ag prints line numbers and groups by file by default, which is good.
         # --noheading is used to be consistent with other tools' output format.
         cmd = ['ag', '--noheading']

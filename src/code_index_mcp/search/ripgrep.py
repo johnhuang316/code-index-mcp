@@ -79,6 +79,9 @@ class RipgrepStrategy(SearchStrategy):
         if exclude_patterns:
             cmd.extend(self.build_exclude_args(exclude_patterns))
 
+        if encoding:
+            cmd.extend(['--encoding', encoding])
+
         # Add -- to treat pattern as a literal argument, preventing injection
         cmd.append('--')
         cmd.append(pattern)
