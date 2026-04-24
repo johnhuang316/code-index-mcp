@@ -688,5 +688,175 @@ class TestWatcherRebuildExcludePatterns(unittest.TestCase):
         self.assertIn("build", excludes_arg)
 
 
+class TestEnvVarBuildTimeout(unittest.TestCase):
+    """Tests for CODE_INDEX_BUILD_TIMEOUT environment variable support (Issue #97)."""
+
+    def setUp(self):
+        self._orig_project_path = _CLI_CONFIG.project_path
+        self._orig_fw_enabled = _CLI_CONFIG.file_watcher_enabled
+        self._orig_exclude = _CLI_CONFIG.additional_exclude_patterns
+        self._orig_build_timeout = getattr(_CLI_CONFIG, "build_timeout", None)
+
+    def tearDown(self):
+        _CLI_CONFIG.project_path = self._orig_project_path
+        _CLI_CONFIG.file_watcher_enabled = self._orig_fw_enabled
+        _CLI_CONFIG.additional_exclude_patterns = self._orig_exclude
+        _CLI_CONFIG.build_timeout = self._orig_build_timeout
+
+    @patch("code_index_mcp.server.mcp.run")
+    def test_build_timeout_from_env(self, mock_run):
+        """CODE_INDEX_BUILD_TIMEOUT=300 sets build_timeout to 300."""
+        with patch.dict(os.environ, {"CODE_INDEX_BUILD_TIMEOUT": "300"}, clear=False):
+            main([])
+        self.assertEqual(_CLI_CONFIG.build_timeout, 300)
+
+    @patch("code_index_mcp.server.mcp.run")
+    def test_build_timeout_unset(self, mock_run):
+        """Unset CODE_INDEX_BUILD_TIMEOUT results in None."""
+        env = os.environ.copy()
+        env.pop("CODE_INDEX_BUILD_TIMEOUT", None)
+        with patch.dict(os.environ, env, clear=True):
+            main([])
+        self.assertIsNone(_CLI_CONFIG.build_timeout)
+
+    @patch("code_index_mcp.server.mcp.run")
+    def test_build_timeout_empty(self, mock_run):
+        """Empty CODE_INDEX_BUILD_TIMEOUT results in None."""
+        with patch.dict(os.environ, {"CODE_INDEX_BUILD_TIMEOUT": ""}, clear=False):
+            main([])
+        self.assertIsNone(_CLI_CONFIG.build_timeout)
+
+    @patch("code_index_mcp.server.mcp.run")
+    def test_build_timeout_invalid_non_numeric(self, mock_run):
+        """Non-numeric CODE_INDEX_BUILD_TIMEOUT results in None with warning."""
+        with patch.dict(
+            os.environ, {"CODE_INDEX_BUILD_TIMEOUT": "abc"}, clear=False
+        ):
+            with self.assertLogs("code_index_mcp.server", level="WARNING") as cm:
+                main([])
+        self.assertIsNone(_CLI_CONFIG.build_timeout)
+        self.assertIn("CODE_INDEX_BUILD_TIMEOUT", "\n".join(cm.output))
+
+    @patch("code_index_mcp.server.mcp.run")
+    def test_build_timeout_zero_rejected(self, mock_run):
+        """CODE_INDEX_BUILD_TIMEOUT=0 is rejected (must be >= 1)."""
+        with patch.dict(os.environ, {"CODE_INDEX_BUILD_TIMEOUT": "0"}, clear=False):
+            with self.assertLogs("code_index_mcp.server", level="WARNING") as cm:
+                main([])
+        self.assertIsNone(_CLI_CONFIG.build_timeout)
+        self.assertIn("CODE_INDEX_BUILD_TIMEOUT", "\n".join(cm.output))
+
+    @patch("code_index_mcp.server.mcp.run")
+    def test_build_timeout_negative_rejected(self, mock_run):
+        """Negative CODE_INDEX_BUILD_TIMEOUT is rejected."""
+        with patch.dict(os.environ, {"CODE_INDEX_BUILD_TIMEOUT": "-5"}, clear=False):
+            with self.assertLogs("code_index_mcp.server", level="WARNING") as cm:
+                main([])
+        self.assertIsNone(_CLI_CONFIG.build_timeout)
+        self.assertIn("CODE_INDEX_BUILD_TIMEOUT", "\n".join(cm.output))
+
+
+class TestBuildTimeoutLifespanIntegration(unittest.TestCase):
+    """Verify CODE_INDEX_BUILD_TIMEOUT is applied to settings during lifespan."""
+
+    def setUp(self):
+        self._orig_project_path = _CLI_CONFIG.project_path
+        self._orig_fw_enabled = _CLI_CONFIG.file_watcher_enabled
+        self._orig_exclude = _CLI_CONFIG.additional_exclude_patterns
+        self._orig_build_timeout = getattr(_CLI_CONFIG, "build_timeout", None)
+
+    def tearDown(self):
+        _CLI_CONFIG.project_path = self._orig_project_path
+        _CLI_CONFIG.file_watcher_enabled = self._orig_fw_enabled
+        _CLI_CONFIG.additional_exclude_patterns = self._orig_exclude
+        _CLI_CONFIG.build_timeout = self._orig_build_timeout
+
+    def _run_lifespan(self):
+        context = None
+
+        async def _run():
+            nonlocal context
+            async with indexer_lifespan(mcp) as ctx:
+                context = ctx
+
+        asyncio.run(_run())
+        return context
+
+    @patch("code_index_mcp.server.ProjectSettings")
+    @patch("code_index_mcp.server.ProjectManagementService")
+    def test_build_timeout_written_to_indexing_config(
+        self, mock_pms_cls, mock_settings_cls
+    ):
+        """When CODE_INDEX_BUILD_TIMEOUT is set, it must update indexing config."""
+        _CLI_CONFIG.project_path = "/tmp/test_project"
+        _CLI_CONFIG.build_timeout = 450
+        _CLI_CONFIG.additional_exclude_patterns = None
+        _CLI_CONFIG.file_watcher_enabled = None
+
+        mock_pre_settings = MagicMock()
+        mock_lifespan_settings = MagicMock()
+
+        def settings_side_effect(path, skip_load=True):
+            return mock_lifespan_settings if skip_load else mock_pre_settings
+
+        mock_settings_cls.side_effect = settings_side_effect
+
+        mock_pms_instance = MagicMock()
+        mock_pms_cls.return_value = mock_pms_instance
+        mock_pms_instance.initialize_project.return_value = "ok"
+
+        self._run_lifespan()
+
+        mock_pre_settings.update_indexing_config.assert_called_once_with(
+            {"timeout_seconds": 450}
+        )
+
+    @patch("code_index_mcp.server.ProjectSettings")
+    @patch("code_index_mcp.server.ProjectManagementService")
+    def test_build_timeout_unset_does_not_touch_indexing_config(
+        self, mock_pms_cls, mock_settings_cls
+    ):
+        """When CODE_INDEX_BUILD_TIMEOUT is not set, indexing config is left alone."""
+        _CLI_CONFIG.project_path = "/tmp/test_project"
+        _CLI_CONFIG.build_timeout = None
+        _CLI_CONFIG.additional_exclude_patterns = None
+        _CLI_CONFIG.file_watcher_enabled = None
+
+        mock_pre_settings = MagicMock()
+        mock_lifespan_settings = MagicMock()
+
+        def settings_side_effect(path, skip_load=True):
+            return mock_lifespan_settings if skip_load else mock_pre_settings
+
+        mock_settings_cls.side_effect = settings_side_effect
+
+        mock_pms_instance = MagicMock()
+        mock_pms_cls.return_value = mock_pms_instance
+        mock_pms_instance.initialize_project.return_value = "ok"
+
+        self._run_lifespan()
+
+        mock_pre_settings.update_indexing_config.assert_not_called()
+
+    @patch("code_index_mcp.server.ProjectSettings")
+    @patch("code_index_mcp.server.ProjectManagementService")
+    def test_warning_when_build_timeout_set_without_project_path(
+        self, mock_pms_cls, mock_settings_cls
+    ):
+        """CODE_INDEX_BUILD_TIMEOUT without PROJECT_PATH should log a warning."""
+        _CLI_CONFIG.project_path = None
+        _CLI_CONFIG.build_timeout = 300
+        _CLI_CONFIG.file_watcher_enabled = None
+        _CLI_CONFIG.additional_exclude_patterns = None
+
+        mock_settings_cls.return_value = MagicMock()
+
+        with self.assertLogs("code_index_mcp.server", level="WARNING") as cm:
+            self._run_lifespan()
+
+        self.assertIn("CODE_INDEX_BUILD_TIMEOUT", "\n".join(cm.output))
+        mock_pms_cls.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()
