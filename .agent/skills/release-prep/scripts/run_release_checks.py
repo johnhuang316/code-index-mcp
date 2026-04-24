@@ -71,6 +71,7 @@ def main() -> int:
         ("pyproject.toml", r'^\s*version\s*=\s*"([^"]+)"'),
         ("src/code_index_mcp/__init__.py", r'__version__\s*=\s*"([^"]+)"'),
         ("uv.lock", None),
+        (".well-known/mcp.llmfeed.json", r'"version"\s*:\s*"([^"]+)"'),
     ]
     for rel_path, pattern in version_files:
         path = root / rel_path

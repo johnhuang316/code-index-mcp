@@ -32,11 +32,12 @@ uv pip install pytest
 uv run python -m pytest tests/
 ```
 
-- Update versions and lockfile:
+- Update versions and lockfile (all four files must stay in sync):
 
 ```bash
-# edit pyproject.toml
-# edit src/code_index_mcp/__init__.py
+# edit pyproject.toml                       -> version = "X.Y.Z"
+# edit src/code_index_mcp/__init__.py       -> __version__ = "X.Y.Z"
+# edit .well-known/mcp.llmfeed.json         -> "version": "X.Y.Z"
 uv lock
 ```
 
@@ -51,7 +52,7 @@ git diff --stat
 - Commit release bump:
 
 ```bash
-git add pyproject.toml src/code_index_mcp/__init__.py uv.lock
+git add pyproject.toml src/code_index_mcp/__init__.py uv.lock .well-known/mcp.llmfeed.json
 git commit -m "chore(release): vX.Y.Z"
 ```
 
