@@ -319,7 +319,7 @@ class SQLiteIndexManager:
 def _hash_project_path(project_path: str) -> str:
     import hashlib
 
-    return hashlib.md5(project_path.encode()).hexdigest()[:12]
+    return hashlib.md5(project_path.encode()).hexdigest()
 
 
 def _compile_glob_regex(pattern: str):
