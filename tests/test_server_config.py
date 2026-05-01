@@ -3,7 +3,7 @@ import shutil
 import sys
 import tempfile
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, mock_open, patch
 
 # Add src to path if not already there
 sys.path.insert(0, os.path.join(os.getcwd(), "src"))
@@ -130,6 +130,33 @@ class TestServerConfig(unittest.TestCase):
 
             # Check names
             self.assertEqual(new_registry["myctx:test_tool"].name, "myctx:test_tool")
+
+
+class TestDockerHostAutoDetection(unittest.TestCase):
+    """Tests for Docker host auto-detection (Issue #96)."""
+
+    def test_is_docker_detects_dockerenv(self):
+        """/.dockerenv presence signals Docker."""
+        from code_index_mcp.server import _is_docker
+
+        with patch("os.path.exists", return_value=True):
+            self.assertTrue(_is_docker())
+
+    def test_is_docker_detects_cgroup(self):
+        """/proc/1/cgroup containing 'docker' signals Docker."""
+        from code_index_mcp.server import _is_docker
+
+        with patch("os.path.exists", return_value=False):
+            with patch("builtins.open", mock_open(read_data="docker\n")):
+                self.assertTrue(_is_docker())
+
+    def test_is_docker_returns_false_outside(self):
+        """No markers means not Docker."""
+        from code_index_mcp.server import _is_docker
+
+        with patch("os.path.exists", return_value=False):
+            with patch("builtins.open", side_effect=FileNotFoundError):
+                self.assertFalse(_is_docker())
 
 
 if __name__ == "__main__":

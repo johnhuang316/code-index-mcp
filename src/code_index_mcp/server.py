@@ -544,6 +544,22 @@ def configure_file_watcher(
 # Removed: analyze_code, code_search, set_project prompts
 
 
+def _is_docker() -> bool:
+    """Detect if the process is running inside a Docker container.
+
+    Checks for the presence of ``/.dockerenv`` or the string ``docker``
+    inside ``/proc/1/cgroup``. Both checks are safe on non-Linux hosts
+    because they simply return ``False`` when the paths do not exist.
+    """
+    if os.path.exists("/.dockerenv"):
+        return True
+    try:
+        with open("/proc/1/cgroup", "r", encoding="utf-8") as f:
+            return "docker" in f.read()
+    except (OSError, IOError):
+        return False
+
+
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """Parse CLI arguments for the MCP server."""
     parser = argparse.ArgumentParser(description="Code Index MCP server")
