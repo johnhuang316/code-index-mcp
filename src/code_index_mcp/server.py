@@ -705,6 +705,11 @@ def main(argv: list[str] | None = None):
         # Set port via settings
         mcp.settings.port = args.port
 
+        # Auto-detect Docker and bind to 0.0.0.0 so port forwarding works
+        if _is_docker():
+            mcp.settings.host = "0.0.0.0"
+            logger.info("Docker environment detected, binding to 0.0.0.0")
+
         # Get the appropriate Starlette app
         if args.transport == "sse":
             starlette_app = mcp.sse_app(args.mount_path)

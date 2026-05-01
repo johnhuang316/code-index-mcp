@@ -158,6 +158,59 @@ class TestDockerHostAutoDetection(unittest.TestCase):
             with patch("builtins.open", side_effect=FileNotFoundError):
                 self.assertFalse(_is_docker())
 
+    @patch("code_index_mcp.server.mcp.sse_app")
+    @patch("code_index_mcp.server._is_docker", return_value=True)
+    @patch("code_index_mcp.server.mcp.settings")
+    @patch("asyncio.run")
+    @patch("uvicorn.Server")
+    @patch("uvicorn.Config")
+    def test_docker_http_host_overridden_to_all_interfaces(
+        self,
+        mock_config_cls,
+        mock_server_cls,
+        mock_asyncio_run,
+        mock_settings,
+        mock_is_docker,
+        mock_sse_app,
+    ):
+        """In Docker with HTTP transport, host is set to 0.0.0.0."""
+        mock_settings.host = "127.0.0.1"
+        mock_settings.port = 8000
+        main(["--transport", "sse"])
+        self.assertEqual(mock_settings.host, "0.0.0.0")
+
+    @patch("code_index_mcp.server.mcp.sse_app")
+    @patch("code_index_mcp.server._is_docker", return_value=False)
+    @patch("code_index_mcp.server.mcp.settings")
+    @patch("asyncio.run")
+    @patch("uvicorn.Server")
+    @patch("uvicorn.Config")
+    def test_non_docker_http_keeps_localhost(
+        self,
+        mock_config_cls,
+        mock_server_cls,
+        mock_asyncio_run,
+        mock_settings,
+        mock_is_docker,
+        mock_sse_app,
+    ):
+        """Outside Docker with HTTP transport, host stays 127.0.0.1."""
+        mock_settings.host = "127.0.0.1"
+        mock_settings.port = 8000
+        main(["--transport", "sse"])
+        self.assertEqual(mock_settings.host, "127.0.0.1")
+
+    @patch("code_index_mcp.server._is_docker", return_value=True)
+    @patch("code_index_mcp.server.mcp.settings")
+    @patch("code_index_mcp.server.mcp.run")
+    def test_docker_stdio_ignores_host_override(
+        self, mock_run, mock_settings, mock_is_docker
+    ):
+        """stdio transport must never touch host, even in Docker."""
+        mock_settings.host = "127.0.0.1"
+        main(["--transport", "stdio"])
+        self.assertEqual(mock_settings.host, "127.0.0.1")
+
 
 if __name__ == "__main__":
     unittest.main()
