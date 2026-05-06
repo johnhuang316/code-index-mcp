@@ -606,8 +606,11 @@ def main(argv: list[str] | None = None):
     args = _parse_args(argv)
 
     # Store CLI configuration for lifespan bootstrap.
-    # CLI --project-path takes precedence over PROJECT_PATH env var.
-    _CLI_CONFIG.project_path = args.project_path or os.environ.get("PROJECT_PATH") or None
+    # CLI --project-path takes precedence over PROJECT_PATH env var,
+    # which takes precedence over the current working directory.
+    _CLI_CONFIG.project_path = (
+        args.project_path or os.environ.get("PROJECT_PATH") or os.getcwd()
+    )
 
     # Read FILE_WATCHER_ENABLED from env (only when not already set via CLI).
     file_watcher_env = os.environ.get("FILE_WATCHER_ENABLED", "").strip().lower()

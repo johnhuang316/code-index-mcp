@@ -41,13 +41,13 @@ class TestEnvVarProjectPath(unittest.TestCase):
         self.assertEqual(_CLI_CONFIG.project_path, "/tmp/cli_project")
 
     @patch("code_index_mcp.server.mcp.run")
-    def test_no_project_path(self, mock_run):
-        """No project path when neither CLI nor env var is set."""
+    def test_no_project_path_falls_back_to_cwd(self, mock_run):
+        """Falls back to cwd when neither CLI nor env var is set."""
         env = os.environ.copy()
         env.pop("PROJECT_PATH", None)
         with patch.dict(os.environ, env, clear=True):
             main([])
-        self.assertIsNone(_CLI_CONFIG.project_path)
+        self.assertEqual(_CLI_CONFIG.project_path, os.getcwd())
 
 
 class TestEnvVarFileWatcher(unittest.TestCase):
