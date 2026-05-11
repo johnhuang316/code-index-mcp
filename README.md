@@ -13,6 +13,8 @@ Transform how AI understands your codebase with advanced search, analysis, and n
 
 </div>
 
+> 🛠️ **Free Tool:** [MCP Server Generator](https://johnhuang316.github.io/mcp-server-generator/) — Generate production-ready MCP servers from a description in seconds. **[Try it →](https://johnhuang316.github.io/mcp-server-generator/)**
+
 <a href="https://glama.ai/mcp/servers/@johnhuang316/code-index-mcp">
   <img width="380" height="200" src="https://glama.ai/mcp/servers/@johnhuang316/code-index-mcp/badge" alt="code-index-mcp MCP server" />
 </a>
