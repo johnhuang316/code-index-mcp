@@ -5,6 +5,7 @@
 [![MCP Server](https://img.shields.io/badge/MCP-Server-blue)](https://modelcontextprotocol.io)
 [![Python](https://img.shields.io/badge/Python-3.10%2B-green)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
+[![Sponsor](https://img.shields.io/badge/Sponsor-%E2%9D%A4-red)](https://github.com/sponsors/johnhuang316)
 
 **Intelligent code indexing and analysis for Large Language Models**
 
