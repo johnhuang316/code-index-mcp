@@ -23,8 +23,6 @@ Code Index MCP is a [Model Context Protocol](https://modelcontextprotocol.io) se
 
 **Perfect for:** Code review, refactoring, documentation generation, debugging assistance, and architectural analysis.
 
-> ⚡ Want to build your own MCP server? Try the free [MCP Server Generator](https://johnhuang316.github.io/mcp-server-generator/) — if it saves you time, [sponsor $5 on GitHub](https://github.com/sponsors/johnhuang316) to support maintenance.
-
 ## Quick Start
 
 ### 🚀 **Recommended Setup (Most Users)**
