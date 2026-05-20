@@ -11,6 +11,7 @@ from .typescript_strategy import TypeScriptParsingStrategy
 from .java_strategy import JavaParsingStrategy
 from .kotlin_strategy import KotlinParsingStrategy
 from .csharp_strategy import CSharpParsingStrategy
+from .c_cpp_strategy import CAndCppParsingStrategy
 from .go_strategy import GoParsingStrategy
 from .objective_c_strategy import ObjectiveCParsingStrategy
 from .zig_strategy import ZigParsingStrategy
@@ -74,8 +75,6 @@ class StrategyFactory:
             '.editorconfig': 'config',
 
             # Other programming languages (will use fallback)
-            '.c': 'c', '.cpp': 'cpp', '.h': 'h', '.hpp': 'hpp',
-            '.cxx': 'cpp', '.cc': 'cpp', '.hxx': 'hpp', '.hh': 'hpp',
             '.cs': 'csharp',
             '.rb': 'ruby',
             '.php': 'php',
@@ -132,6 +131,12 @@ class StrategyFactory:
                 csharp_strategy = CSharpParsingStrategy()
                 for ext in csharp_strategy.get_supported_extensions():
                     self._strategies[ext] = csharp_strategy
+
+                # C/C++ (.h is intentionally handled as C)
+                c_cpp_strategy = CAndCppParsingStrategy()
+                for ext in c_cpp_strategy.get_supported_extensions():
+                    self._strategies[ext] = c_cpp_strategy
+
                 # Go
                 go_strategy = GoParsingStrategy()
                 for ext in go_strategy.get_supported_extensions():

@@ -385,12 +385,12 @@ def _categorize_symbols(symbol_rows) -> Dict[str, List[Dict[str, Any]]]:
             methods.append(info)
         elif signature.startswith("def "):
             functions.append(info)
-        elif signature.startswith("class ") or symbol_type == "class":
+        elif signature.startswith("class ") or symbol_type in {"class", "struct", "union", "enum", "interface"}:
             classes.append(info)
         else:
             if symbol_type == "method":
                 methods.append(info)
-            elif symbol_type == "class":
+            elif symbol_type in {"class", "struct", "union", "enum", "interface"}:
                 classes.append(info)
             else:
                 functions.append(info)
