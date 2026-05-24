@@ -15,6 +15,7 @@ from .go_strategy import GoParsingStrategy
 from .objective_c_strategy import ObjectiveCParsingStrategy
 from .zig_strategy import ZigParsingStrategy
 from .rust_strategy import RustParsingStrategy
+from .nim_strategy import NimParsingStrategy
 from .fallback_strategy import FallbackParsingStrategy
 
 
@@ -151,6 +152,11 @@ class StrategyFactory:
                 rust_strategy = RustParsingStrategy()
                 for ext in rust_strategy.get_supported_extensions():
                     self._strategies[ext] = rust_strategy
+
+                # Nim
+                nim_strategy = NimParsingStrategy()
+                for ext in nim_strategy.get_supported_extensions():
+                    self._strategies[ext] = nim_strategy
                     
                 self._initialized = True
                 
