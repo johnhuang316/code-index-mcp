@@ -10,7 +10,7 @@ import os
 import time
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FutureTimeoutError
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Dict, Iterable, List, Optional, Set, Tuple
 
 from .json_index_builder import JSONIndexBuilder
 from .sqlite_store import SQLiteIndexStore
@@ -261,6 +261,32 @@ class SQLiteIndexBuilder(JSONIndexBuilder):
             "timed_out": timed_out,
             "total_files": total_files,
         }
+
+    # ── Incremental: process a single file ──────────────────────────
+
+    def process_file(self, file_path: str) -> Optional[Tuple[Dict, Dict, str, bool]]:
+        """Process a single file and return its symbols + file info.
+
+        Args:
+            file_path: Absolute path to the file.
+
+        Returns:
+            Tuple of (symbols, file_info_dict, language, is_specialized)
+            or None if the file couldn't be processed.
+        """
+        # Normalize: ensure absolute path
+        if not os.path.isabs(file_path):
+            file_path = os.path.join(self.project_path, file_path)
+
+        if not os.path.isfile(file_path):
+            logger.warning("File not found for incremental index: %s", file_path)
+            return None
+
+        specialized_extensions = set(self.strategy_factory.get_specialized_extensions())
+        result = self._process_file(file_path, specialized_extensions)
+        if result is None:
+            logger.info("Incremental index skipped (unsupported/binary): %s", file_path)
+        return result
 
     # Internal helpers -------------------------------------------------
 

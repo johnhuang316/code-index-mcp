@@ -5,7 +5,8 @@ This service handles the business logic for project initialization, configuratio
 and lifecycle management across the current indexing backends.
 """
 import logging
-from typing import Dict, Any, List
+import os
+from typing import Dict, Any, List, Optional
 from dataclasses import dataclass
 from contextlib import contextmanager
 
@@ -295,12 +296,12 @@ class ProjectManagementService(BaseService):
             # Capture current exclude patterns for use in the rebuild callback
             rebuild_excludes = self._get_exclude_patterns()
 
-            # Create rebuild callback that uses the deep index manager
-            def rebuild_callback():
+            # Create rebuild callback that uses both shallow + deep index
+            def rebuild_callback(changed_files: Optional[List[str]] = None):
                 logger.info("File watcher triggered rebuild callback")
                 try:
+                    # Step 1: rebuild shallow index (file list)
                     logger.debug(f"Starting shallow index rebuild for: {project_path}")
-                    # Business logic: File changed, rebuild using SHALLOW index manager
                     try:
                         if not self._shallow_manager.set_project_path(project_path, rebuild_excludes):
                             logger.warning("Shallow manager set_project_path failed")
@@ -308,6 +309,11 @@ class ProjectManagementService(BaseService):
                         if self._shallow_manager.build_index():
                             files = self._shallow_manager.get_file_list()
                             logger.info(f"File watcher shallow rebuild completed successfully - files {len(files)}")
+                            # Step 2: incremental deep index for changed files
+                            if changed_files:
+                                for fpath in changed_files:
+                                    if os.path.isfile(fpath):
+                                        self._index_manager.refresh_file(fpath)
                             return True
                         else:
                             logger.warning("File watcher shallow rebuild failed")

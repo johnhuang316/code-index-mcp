@@ -179,6 +179,84 @@ class SQLiteIndexManager:
                 return self.load_index()
             return False
 
+    def refresh_file(self, file_path: str) -> bool:
+        """Incrementally re-index a single file after change.
+
+        Removes old symbols for this file, re-parses it, and inserts
+        the updated data. Much faster than a full rebuild when only
+        one file changed.
+
+        Args:
+            file_path: Absolute path to the changed file.
+
+        Returns:
+            True on success, False on error.
+        """
+        with self._lock:
+            if not self.index_builder or not self.store:
+                logger.error("Index not initialized for refresh_file")
+                return False
+
+            self.store.initialize_schema()
+
+            # Normalize path to relative for DB
+            rel_path = os.path.relpath(file_path, self.project_path).replace('\\', '/')
+
+            try:
+                # Step 1: delete old data for this file (cascades to symbols)
+                with self.store.connect(for_build=True) as conn:
+                    conn.execute("PRAGMA foreign_keys=ON")
+                    conn.execute("DELETE FROM files WHERE path = ?", (rel_path,))
+
+                # Step 2: re-process the file (no DB transaction yet)
+                result = self.index_builder.process_file(file_path)
+                if result is None:
+                    # File deleted or unsupported — we already deleted it, done
+                    logger.info("Incremental: removed stale index for %s", rel_path)
+                    return True
+
+                symbols, file_info_dict, language, is_specialized = result
+                if not file_info_dict:
+                    logger.warning("Incremental: no file info returned for %s", file_path)
+                    return False
+
+                # Step 3: re-insert
+                with self.store.connect(for_build=True) as conn:
+                    conn.execute("PRAGMA foreign_keys=ON")
+                    fpath, file_info = next(iter(file_info_dict.items()))
+                    file_id = conn.execute(
+                        "INSERT INTO files(path, language, line_count, imports, exports, package, docstring) "
+                        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                        (
+                            fpath,
+                            file_info.language,
+                            file_info.line_count,
+                            json.dumps(file_info.imports or []),
+                            json.dumps(file_info.exports or []),
+                            file_info.package,
+                            file_info.docstring,
+                        ),
+                    ).lastrowid
+
+                    for sym_id, sym_info in symbols.items():
+                        called_by = json.dumps(sym_info.called_by or [])
+                        short_name = sym_id.split("::", 1)[-1]
+                        conn.execute(
+                            "INSERT INTO symbols(symbol_id, file_id, type, line, end_line, signature, docstring, called_by, short_name) "
+                            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                            (sym_id, file_id, sym_info.type, sym_info.line, sym_info.end_line,
+                             sym_info.signature, sym_info.docstring, called_by, short_name),
+                        )
+
+                    conn.execute("PRAGMA optimize")
+
+                logger.info("Incremental index updated: %s (%d symbols)", rel_path, len(symbols))
+                return True
+
+            except Exception as exc:
+                logger.error("Incremental index failed for %s: %s", file_path, exc)
+                return False
+
     def build_shallow_index(self) -> bool:
         """Build the shallow index file list using existing builder helper."""
         with self._lock:
