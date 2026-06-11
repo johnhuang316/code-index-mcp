@@ -10,6 +10,7 @@ to domain-specific services for business logic.
 
 # Standard library imports
 import argparse
+import asyncio
 import inspect
 import logging
 import os
@@ -19,7 +20,7 @@ import threading
 import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import wraps
 from typing import Any, Dict, List, Optional
 from urllib.parse import unquote
@@ -185,6 +186,14 @@ setup_indexing_performance_logging()
 logger = logging.getLogger(__name__)
 
 
+class IndexingState:
+    """State machine for background indexing lifecycle."""
+    INITIALIZING = "initializing"
+    INDEXING = "indexing"
+    READY = "ready"
+    ERROR = "error"
+
+
 @dataclass
 class CodeIndexerContext:
     """Context for the Code Indexer MCP server."""
@@ -193,6 +202,10 @@ class CodeIndexerContext:
     settings: ProjectSettings
     file_count: int = 0
     file_watcher_service: FileWatcherService = None
+    indexing_state: str = IndexingState.INITIALIZING
+    indexing_progress: float = 0.0
+    indexing_error: str | None = None
+    _indexing_tasks: list = field(default_factory=list)
 
 
 @dataclass
@@ -217,91 +230,67 @@ class _BootstrapRequestContext:
 _CLI_CONFIG = _CLIConfig()
 
 
+async def _background_initialize(context: CodeIndexerContext, path: str) -> None:
+    """Initialize project in background without blocking lifespan."""
+    try:
+        # Apply env-based settings before initialize_project
+        pre_settings = ProjectSettings(path, skip_load=False)
+        if _CLI_CONFIG.additional_exclude_patterns:
+            try:
+                pre_settings.update_exclude_patterns(
+                    _CLI_CONFIG.additional_exclude_patterns
+                )
+            except Exception as exc:  # pylint: disable=broad-except
+                logger.error("Failed to apply additional exclude patterns: %s", exc)
+        if _CLI_CONFIG.file_watcher_enabled is not None:
+            try:
+                pre_settings.update_file_watcher_config(
+                    {"enabled": _CLI_CONFIG.file_watcher_enabled}
+                )
+            except Exception as exc:  # pylint: disable=broad-except
+                logger.error("Failed to apply file watcher config from env: %s", exc)
+        if _CLI_CONFIG.build_timeout is not None:
+            try:
+                pre_settings.update_indexing_config(
+                    {"timeout_seconds": _CLI_CONFIG.build_timeout}
+                )
+            except Exception as exc:  # pylint: disable=broad-except
+                logger.error("Failed to apply build timeout from env: %s", exc)
+
+        context.settings = pre_settings
+        bootstrap_ctx = Context(
+            request_context=_BootstrapRequestContext(context), fastmcp=mcp
+        )
+        message = await asyncio.to_thread(
+            ProjectManagementService(bootstrap_ctx).initialize_project, path
+        )
+        logger.info("Project initialized from CLI/env config: %s", message)
+        context.indexing_progress = 1.0
+        context.indexing_state = IndexingState.READY
+    except Exception as exc:  # pylint: disable=broad-except
+        logger.error("Failed to initialize project from CLI/env config: %s", exc)
+        context.indexing_state = IndexingState.ERROR
+        context.indexing_error = str(exc)
+
+
 @asynccontextmanager
 async def indexer_lifespan(_server: FastMCP) -> AsyncIterator[CodeIndexerContext]:
     """Manage the lifecycle of the Code Indexer MCP server."""
-    # Don't set a default path, user must explicitly set project path
-    base_path = ""  # Empty string to indicate no path is set
-
-    # Initialize settings manager with skip_load=True to skip loading files
+    base_path = ""
     settings = ProjectSettings(base_path, skip_load=True)
-
-    # Initialize context - file watcher will be initialized later when project path is set
     context = CodeIndexerContext(
         base_path=base_path, settings=settings, file_watcher_service=None
     )
 
     try:
-        # Bootstrap project path when provided via CLI or env var.
         if _CLI_CONFIG.project_path:
-            # Apply env-based settings BEFORE initialize_project so they
-            # take effect during the first index build and watcher startup.
-            pre_settings = ProjectSettings(_CLI_CONFIG.project_path, skip_load=False)
-
-            if _CLI_CONFIG.additional_exclude_patterns:
-                try:
-                    pre_settings.update_exclude_patterns(
-                        _CLI_CONFIG.additional_exclude_patterns
-                    )
-                    logger.info(
-                        "Applied %d additional exclude patterns from env",
-                        len(_CLI_CONFIG.additional_exclude_patterns),
-                    )
-                except Exception as exc:  # pylint: disable=broad-except
-                    logger.error(
-                        "Failed to apply additional exclude patterns: %s", exc
-                    )
-
-            if _CLI_CONFIG.file_watcher_enabled is not None:
-                try:
-                    pre_settings.update_file_watcher_config(
-                        {"enabled": _CLI_CONFIG.file_watcher_enabled}
-                    )
-                    logger.info(
-                        "File watcher enabled=%s from env config",
-                        _CLI_CONFIG.file_watcher_enabled,
-                    )
-                except Exception as exc:  # pylint: disable=broad-except
-                    logger.error(
-                        "Failed to apply file watcher config from env: %s", exc
-                    )
-
-            if _CLI_CONFIG.build_timeout is not None:
-                try:
-                    pre_settings.update_indexing_config(
-                        {"timeout_seconds": _CLI_CONFIG.build_timeout}
-                    )
-                    logger.info(
-                        "Deep index build timeout=%ds from env config",
-                        _CLI_CONFIG.build_timeout,
-                    )
-                except Exception as exc:  # pylint: disable=broad-except
-                    logger.error(
-                        "Failed to apply build timeout from env: %s", exc
-                    )
-
-            # Set the env-configured settings on the context BEFORE
-            # initialize_project so services see the correct instance.
-            context.settings = pre_settings
-
-            bootstrap_ctx = Context(
-                request_context=_BootstrapRequestContext(context), fastmcp=mcp
+            context.indexing_state = IndexingState.INDEXING
+            task = asyncio.create_task(
+                _background_initialize(context, _CLI_CONFIG.project_path)
             )
-            try:
-                message = ProjectManagementService(bootstrap_ctx).initialize_project(
-                    _CLI_CONFIG.project_path
-                )
-                logger.info("Project initialized from CLI/env config: %s", message)
-            except Exception as exc:  # pylint: disable=broad-except
-                logger.error("Failed to initialize project from CLI/env config: %s", exc)
-                raise RuntimeError(
-                    f"Failed to initialize project path '{_CLI_CONFIG.project_path}'"
-                ) from exc
-
-            # No post-hoc stop needed: _setup_file_monitoring() now checks
-            # the enabled flag and skips startup when disabled.
+            context._indexing_tasks.append(task)
         else:
-            # Warn when env vars are set but PROJECT_PATH is missing.
+            context.indexing_state = IndexingState.READY
             if _CLI_CONFIG.file_watcher_enabled is not None:
                 logger.warning(
                     "FILE_WATCHER_ENABLED is set but PROJECT_PATH is not; ignoring"
@@ -315,10 +304,14 @@ async def indexer_lifespan(_server: FastMCP) -> AsyncIterator[CodeIndexerContext
                     "CODE_INDEX_BUILD_TIMEOUT is set but PROJECT_PATH is not; ignoring"
                 )
 
-        # Provide context to the server
         yield context
     finally:
-        # Stop file watcher if it was started
+        for t in context._indexing_tasks:
+            t.cancel()
+            try:
+                await asyncio.wait_for(t, timeout=5.0)
+            except (asyncio.CancelledError, asyncio.TimeoutError):
+                pass
         if context.file_watcher_service:
             context.file_watcher_service.stop_monitoring()
 
@@ -340,10 +333,33 @@ def get_file_content(file_path: str) -> str:
 # ----- TOOLS -----
 
 
+def _check_index_ready(ctx: Context) -> dict[str, Any] | list[str] | None:
+    """Check if background indexing is complete; return busy response if not."""
+    req_ctx = getattr(ctx, "request_context", None)
+    lifespan_ctx = getattr(req_ctx, "lifespan_context", None)
+    if lifespan_ctx is None:
+        return None
+    if lifespan_ctx.indexing_state == IndexingState.INDEXING:
+        return {
+            "status": "indexing",
+            "progress": f"{lifespan_ctx.indexing_progress*100:.0f}%",
+            "message": "Indexing in progress. Please retry shortly."
+        }
+    if lifespan_ctx.indexing_state == IndexingState.ERROR:
+        return {
+            "status": "error",
+            "message": f"Indexing failed: {lifespan_ctx.indexing_error}"
+        }
+    return None
+
+
 @mcp.tool()
 @handle_mcp_tool_errors(return_type="str")
 def set_project_path(path: str, ctx: Context) -> str:
     """Set the base project path for indexing."""
+    busy = _check_index_ready(ctx)
+    if busy is not None:
+        return str(busy)
     return ProjectManagementService(ctx).initialize_project(path)
 
 
@@ -366,6 +382,9 @@ Search for code pattern with pagination. Auto-selects best search tool (ugrep/ri
 Supports glob file_pattern (e.g., "*.py"), explicit regex mode, and fuzzy matching (ugrep only).
 Regex matching requires passing regex=True and may require an external search tool.
 """
+    busy = _check_index_ready(ctx)
+    if busy is not None:
+        return busy  # type: ignore[return-value]
     return SearchService(ctx).search_code(
         pattern=pattern,
         case_sensitive=case_sensitive,
@@ -385,6 +404,9 @@ def find_files(pattern: str, ctx: Context) -> list[str]:
 Find files matching glob pattern using in-memory index.
 Supports path patterns (*.py, test_*.js) and filename-only matching (README.md).
 """
+    busy = _check_index_ready(ctx)
+    if busy is not None:
+        return [str(busy)]  # type: ignore[return-value]
     return FileDiscoveryService(ctx).find_files(pattern)
 
 
@@ -399,6 +421,9 @@ def get_file_summary(file_path: str, ctx: Context) -> dict[str, Any]:
     - Import statements
     - Basic complexity metrics
     """
+    busy = _check_index_ready(ctx)
+    if busy is not None:
+        return busy  # type: ignore[return-value]
     return CodeIntelligenceService(ctx).analyze_file(file_path)
 
 
@@ -428,6 +453,9 @@ def get_symbol_body(file_path: str, symbol_name: str, ctx: Context) -> dict[str,
         - docstring: Documentation string (if available)
         - called_by: List of symbols that call this symbol
     """
+    busy = _check_index_ready(ctx)
+    if busy is not None:
+        return busy  # type: ignore[return-value]
     return CodeIntelligenceService(ctx).get_symbol_body(file_path, symbol_name)
 
 
