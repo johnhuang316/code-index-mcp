@@ -228,6 +228,7 @@ class TestLifespanEnvConfigIntegration(unittest.TestCase):
             nonlocal context
             async with indexer_lifespan(mcp) as ctx:
                 context = ctx
+                await asyncio.sleep(1)  # let background task complete
 
         asyncio.run(_run())
         return context
@@ -354,7 +355,7 @@ class TestLifespanEnvConfigIntegration(unittest.TestCase):
 
         async def _run():
             async with indexer_lifespan(mcp) as ctx:
-                pass
+                await asyncio.sleep(1)  # let background task complete
 
         asyncio.run(_run())
 
@@ -778,6 +779,7 @@ class TestBuildTimeoutLifespanIntegration(unittest.TestCase):
             nonlocal context
             async with indexer_lifespan(mcp) as ctx:
                 context = ctx
+                await asyncio.sleep(1)  # let background task complete
 
         asyncio.run(_run())
         return context
