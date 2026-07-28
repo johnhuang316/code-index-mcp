@@ -1,5 +1,7 @@
 # Code Index MCP
 
+[![MCP Toplist](https://mcptoplist.com/badge/glama%2Fjohnhuang316%2Fcode-index-mcp.svg)](https://mcptoplist.com/server/glama%2Fjohnhuang316%2Fcode-index-mcp)
+
 <div align="center">
 
 [![MCP Server](https://img.shields.io/badge/MCP-Server-blue)](https://modelcontextprotocol.io)
