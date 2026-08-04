@@ -19,6 +19,7 @@ import re
 
 from .json_index_builder import JSONIndexBuilder
 from ..constants import SETTINGS_DIR, INDEX_FILE_SHALLOW
+from ..project_settings import ProjectSettings
 
 logger = logging.getLogger(__name__)
 
@@ -58,8 +59,13 @@ class ShallowIndexManager:
                 self.project_path = project_path
                 self.index_builder = JSONIndexBuilder(project_path, additional_excludes)
 
-                project_hash = hashlib.md5(project_path.encode()).hexdigest()[:12]
-                self.temp_dir = os.path.join(tempfile.gettempdir(), SETTINGS_DIR, project_hash)
+                project_hash = hashlib.md5(project_path.encode()).hexdigest()
+                index_root = (
+                    ProjectSettings.custom_index_root
+                    if (hasattr(ProjectSettings, "custom_index_root") and ProjectSettings.custom_index_root)
+                    else os.path.join(tempfile.gettempdir(), SETTINGS_DIR)
+                )
+                self.temp_dir = os.path.join(index_root, project_hash)
                 os.makedirs(self.temp_dir, exist_ok=True)
                 self.index_path = os.path.join(self.temp_dir, INDEX_FILE_SHALLOW)
                 if additional_excludes:
