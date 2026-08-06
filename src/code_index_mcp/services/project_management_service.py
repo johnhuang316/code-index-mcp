@@ -200,6 +200,10 @@ class ProjectManagementService(BaseService):
         if not self._shallow_manager.set_project_path(project_path, excludes):
             raise RuntimeError(f"Failed to set project path (shallow): {project_path}")
 
+        if not self._index_manager.set_project_path(project_path, excludes):
+            raise RuntimeError(f"Failed to set project path (deep): {project_path}")
+        self._index_manager.load_index()
+
         # Update context
         self.helper.update_base_path(project_path)
 
