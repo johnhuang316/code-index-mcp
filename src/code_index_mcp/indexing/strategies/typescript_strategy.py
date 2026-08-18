@@ -40,11 +40,12 @@ class TypeScriptParsingStrategy(ParsingStrategy):
         variable_scopes: List[Dict[str, str]] = [{}]
 
         parser = tree_sitter.Parser(self.ts_language)
-        tree = parser.parse(content.encode('utf8'))
+        content_bytes = content.encode('utf8')
+        tree = parser.parse(content_bytes)
 
         # Single-pass traversal that handles everything
         context = TraversalContext(
-            content=content,
+            content_bytes=content_bytes,
             file_path=file_path,
             symbols=symbols,
             functions=functions,
@@ -81,10 +82,10 @@ class TypeScriptParsingStrategy(ParsingStrategy):
 
         # Handle function declarations
         if node_type == 'function_declaration':
-            name = self._get_function_name(node, context.content)
+            name = self._get_function_name(node, context.content_bytes)
             if name:
                 symbol_id = self._create_symbol_id(context.file_path, name)
-                signature = self._get_ts_function_signature(node, context.content)
+                signature = self._get_ts_function_signature(node, context.content_bytes)
                 symbol_info = SymbolInfo(
                     type="function",
                     file=context.file_path,
@@ -105,7 +106,7 @@ class TypeScriptParsingStrategy(ParsingStrategy):
 
         # Handle class declarations
         elif node_type == 'class_declaration':
-            name = self._get_class_name(node, context.content)
+            name = self._get_class_name(node, context.content_bytes)
             if name:
                 symbol_id = self._create_symbol_id(context.file_path, name)
                 symbol_info = SymbolInfo(
@@ -126,7 +127,7 @@ class TypeScriptParsingStrategy(ParsingStrategy):
 
         # Handle interface declarations
         elif node_type == 'interface_declaration':
-            name = self._get_interface_name(node, context.content)
+            name = self._get_interface_name(node, context.content_bytes)
             if name:
                 symbol_id = self._create_symbol_id(context.file_path, name)
                 symbol_info = SymbolInfo(
@@ -147,11 +148,11 @@ class TypeScriptParsingStrategy(ParsingStrategy):
 
         # Handle method definitions
         elif node_type == 'method_definition':
-            method_name = self._get_method_name(node, context.content)
+            method_name = self._get_method_name(node, context.content_bytes)
             if method_name and current_class:
                 full_name = f"{current_class}.{method_name}"
                 symbol_id = self._create_symbol_id(context.file_path, full_name)
-                signature = self._get_ts_function_signature(node, context.content)
+                signature = self._get_ts_function_signature(node, context.content_bytes)
                 symbol_info = SymbolInfo(
                     type="method",
                     file=context.file_path,
@@ -197,9 +198,11 @@ class TypeScriptParsingStrategy(ParsingStrategy):
                 ]:
                     continue
 
-                name = context.content[name_node.start_byte:name_node.end_byte]
+                name = self._slice_bytes(context.content_bytes, name_node.start_byte, name_node.end_byte)
                 symbol_id = self._create_symbol_id(context.file_path, name)
-                signature = context.content[child.start_byte:child.end_byte].split('\n')[0].strip()
+                signature = self._slice_bytes(
+                    context.content_bytes, child.start_byte, child.end_byte
+                ).split('\n')[0].strip()
                 symbol_info = SymbolInfo(
                     type="function",
                     file=context.file_path,
@@ -237,12 +240,12 @@ class TypeScriptParsingStrategy(ParsingStrategy):
 
         # Handle import declarations
         elif node.type == 'import_statement':
-            import_text = context.content[node.start_byte:node.end_byte]
+            import_text = self._slice_bytes(context.content_bytes, node.start_byte, node.end_byte)
             context.imports.append(import_text)
 
         # Handle export declarations
         elif node.type in ['export_statement', 'export_default_declaration']:
-            export_text = context.content[node.start_byte:node.end_byte]
+            export_text = self._slice_bytes(context.content_bytes, node.start_byte, node.end_byte)
             context.exports.append(export_text)
 
         # Continue traversing children for other node types
@@ -294,7 +297,7 @@ class TypeScriptParsingStrategy(ParsingStrategy):
         node_type = node.type
 
         if node_type == 'identifier':
-            return context.content[node.start_byte:node.end_byte]
+            return self._slice_bytes(context.content_bytes, node.start_byte, node.end_byte)
 
         if node_type == 'member_expression':
             property_node = node.child_by_field_name('property')
@@ -306,7 +309,9 @@ class TypeScriptParsingStrategy(ParsingStrategy):
             if property_node is None:
                 return None
 
-            property_name = context.content[property_node.start_byte:property_node.end_byte]
+            property_name = self._slice_bytes(
+                context.content_bytes, property_node.start_byte, property_node.end_byte
+            )
             qualifier_node = node.child_by_field_name('object')
             qualifier = self._resolve_member_qualifier(
                 qualifier_node,
@@ -343,7 +348,9 @@ class TypeScriptParsingStrategy(ParsingStrategy):
             return None
 
         if function_node.type == 'identifier':
-            return context.content[function_node.start_byte:function_node.end_byte]
+            return self._slice_bytes(
+                context.content_bytes, function_node.start_byte, function_node.end_byte
+            )
 
         if function_node.type == 'member_expression':
             property_node = function_node.child_by_field_name('property')
@@ -355,7 +362,9 @@ class TypeScriptParsingStrategy(ParsingStrategy):
             if property_node is None:
                 return None
 
-            property_name = context.content[property_node.start_byte:property_node.end_byte]
+            property_name = self._slice_bytes(
+                context.content_bytes, property_node.start_byte, property_node.end_byte
+            )
             qualifier_node = function_node.child_by_field_name('object')
             qualifier = self._resolve_member_qualifier(
                 qualifier_node,
@@ -393,7 +402,7 @@ class TypeScriptParsingStrategy(ParsingStrategy):
             return current_class
 
         if node_type == 'identifier':
-            return context.content[node.start_byte:node.end_byte]
+            return self._slice_bytes(context.content_bytes, node.start_byte, node.end_byte)
 
         if node_type == 'member_expression':
             property_node = node.child_by_field_name('property')
@@ -422,44 +431,46 @@ class TypeScriptParsingStrategy(ParsingStrategy):
                     if qualifier:
                         break
 
-            property_name = context.content[property_node.start_byte:property_node.end_byte]
+            property_name = self._slice_bytes(
+                context.content_bytes, property_node.start_byte, property_node.end_byte
+            )
             if qualifier:
                 return f"{qualifier}.{property_name}"
             return property_name
 
         return None
 
-    def _get_function_name(self, node, content: str) -> Optional[str]:
+    def _get_function_name(self, node, content_bytes: bytes) -> Optional[str]:
         """Extract function name from tree-sitter node."""
         for child in node.children:
             if child.type == 'identifier':
-                return content[child.start_byte:child.end_byte]
+                return self._slice_bytes(content_bytes, child.start_byte, child.end_byte)
         return None
 
-    def _get_class_name(self, node, content: str) -> Optional[str]:
+    def _get_class_name(self, node, content_bytes: bytes) -> Optional[str]:
         """Extract class name from tree-sitter node."""
         for child in node.children:
             if child.type == 'identifier':
-                return content[child.start_byte:child.end_byte]
+                return self._slice_bytes(content_bytes, child.start_byte, child.end_byte)
         return None
 
-    def _get_interface_name(self, node, content: str) -> Optional[str]:
+    def _get_interface_name(self, node, content_bytes: bytes) -> Optional[str]:
         """Extract interface name from tree-sitter node."""
         for child in node.children:
             if child.type == 'type_identifier':
-                return content[child.start_byte:child.end_byte]
+                return self._slice_bytes(content_bytes, child.start_byte, child.end_byte)
         return None
 
-    def _get_method_name(self, node, content: str) -> Optional[str]:
+    def _get_method_name(self, node, content_bytes: bytes) -> Optional[str]:
         """Extract method name from tree-sitter node."""
         for child in node.children:
             if child.type == 'property_identifier':
-                return content[child.start_byte:child.end_byte]
+                return self._slice_bytes(content_bytes, child.start_byte, child.end_byte)
         return None
 
-    def _get_ts_function_signature(self, node, content: str) -> str:
+    def _get_ts_function_signature(self, node, content_bytes: bytes) -> str:
         """Extract TypeScript function signature."""
-        return content[node.start_byte:node.end_byte].split('\n')[0].strip()
+        return self._slice_bytes(content_bytes, node.start_byte, node.end_byte).split('\n')[0].strip()
 
 
 class TraversalContext:
@@ -467,7 +478,7 @@ class TraversalContext:
 
     def __init__(
         self,
-        content: str,
+        content_bytes: bytes,
         file_path: str,
         symbols: Dict,
         functions: List,
@@ -479,7 +490,7 @@ class TraversalContext:
         pending_call_set: Set[Tuple[str, str]],
         variable_scopes: List[Dict[str, str]],
     ):
-        self.content = content
+        self.content_bytes = content_bytes
         self.file_path = file_path
         self.symbols = symbols
         self.functions = functions

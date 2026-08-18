@@ -39,17 +39,18 @@ class JavaParsingStrategy(ParsingStrategy):
         parser = tree_sitter.Parser(self.java_language)
 
         try:
-            tree = parser.parse(content.encode('utf8'))
+            content_bytes = content.encode('utf8')
+            tree = parser.parse(content_bytes)
             
             # Extract package info first
             for node in tree.root_node.children:
                 if node.type == 'package_declaration':
-                    package = self._extract_java_package(node, content)
+                    package = self._extract_java_package(node, content_bytes)
                     break
             
             # Single-pass traversal that handles everything
             context = TraversalContext(
-                content=content,
+                content_bytes=content_bytes,
                 file_path=file_path,
                 symbols=symbols,
                 functions=functions,
@@ -80,7 +81,7 @@ class JavaParsingStrategy(ParsingStrategy):
         
         # Handle class declarations
         if node.type == 'class_declaration':
-            name = self._get_java_class_name(node, context.content)
+            name = self._get_java_class_name(node, context.content_bytes)
             if name:
                 symbol_id = self._create_symbol_id(context.file_path, name)
                 symbol_info = SymbolInfo(
@@ -100,7 +101,7 @@ class JavaParsingStrategy(ParsingStrategy):
         
         # Handle method declarations
         elif node.type == 'method_declaration':
-            name = self._get_java_method_name(node, context.content)
+            name = self._get_java_method_name(node, context.content_bytes)
             if name:
                 # Build full method name with class context
                 if current_class:
@@ -114,7 +115,7 @@ class JavaParsingStrategy(ParsingStrategy):
                     file=context.file_path,
                     line=node.start_point[0] + 1,
                     end_line=node.end_point[0] + 1,
-                    signature=self._get_java_method_signature(node, context.content)
+                    signature=self._get_java_method_signature(node, context.content_bytes)
                 )
                 context.symbols[symbol_id] = symbol_info
                 context.symbol_lookup[full_name] = symbol_id
@@ -130,7 +131,7 @@ class JavaParsingStrategy(ParsingStrategy):
         # Handle method invocations (calls)
         elif node.type == 'method_invocation':
             if current_method:
-                called_method = self._get_called_method_name(node, context.content)
+                called_method = self._get_called_method_name(node, context.content_bytes)
                 if called_method:
                     # Use O(1) lookup instead of O(n) iteration
                     if called_method in context.symbol_lookup:
@@ -149,7 +150,7 @@ class JavaParsingStrategy(ParsingStrategy):
         
         # Handle import declarations
         elif node.type == 'import_declaration':
-            import_text = context.content[node.start_byte:node.end_byte]
+            import_text = self._slice_bytes(context.content_bytes, node.start_byte, node.end_byte)
             # Extract the import path (remove 'import' keyword and semicolon)
             import_path = import_text.replace('import', '').replace(';', '').strip()
             if import_path:
@@ -160,28 +161,28 @@ class JavaParsingStrategy(ParsingStrategy):
             self._traverse_node_single_pass(child, context, current_class=current_class, 
                                            current_method=current_method)
 
-    def _get_java_class_name(self, node, content: str) -> Optional[str]:
+    def _get_java_class_name(self, node, content_bytes: bytes) -> Optional[str]:
         for child in node.children:
             if child.type == 'identifier':
-                return content[child.start_byte:child.end_byte]
+                return self._slice_bytes(content_bytes, child.start_byte, child.end_byte)
         return None
 
-    def _get_java_method_name(self, node, content: str) -> Optional[str]:
+    def _get_java_method_name(self, node, content_bytes: bytes) -> Optional[str]:
         for child in node.children:
             if child.type == 'identifier':
-                return content[child.start_byte:child.end_byte]
+                return self._slice_bytes(content_bytes, child.start_byte, child.end_byte)
         return None
 
-    def _get_java_method_signature(self, node, content: str) -> str:
-        return content[node.start_byte:node.end_byte].split('\n')[0].strip()
+    def _get_java_method_signature(self, node, content_bytes: bytes) -> str:
+        return self._slice_bytes(content_bytes, node.start_byte, node.end_byte).split('\n')[0].strip()
 
-    def _extract_java_package(self, node, content: str) -> Optional[str]:
+    def _extract_java_package(self, node, content_bytes: bytes) -> Optional[str]:
         for child in node.children:
             if child.type == 'scoped_identifier':
-                return content[child.start_byte:child.end_byte]
+                return self._slice_bytes(content_bytes, child.start_byte, child.end_byte)
         return None
 
-    def _get_called_method_name(self, node, content: str) -> Optional[str]:
+    def _get_called_method_name(self, node, content_bytes: bytes) -> Optional[str]:
         """Extract called method name from method invocation node."""
         # Handle obj.method() pattern - look for the method name after the dot
         for child in node.children:
@@ -190,19 +191,19 @@ class JavaParsingStrategy(ParsingStrategy):
                 for subchild in child.children:
                     if subchild.type == 'identifier' and subchild.start_byte > child.start_byte:
                         # Get the rightmost identifier (the method name)
-                        return content[subchild.start_byte:subchild.end_byte]
+                        return self._slice_bytes(content_bytes, subchild.start_byte, subchild.end_byte)
             elif child.type == 'identifier':
                 # Direct method call without object reference
-                return content[child.start_byte:child.end_byte]
+                return self._slice_bytes(content_bytes, child.start_byte, child.end_byte)
         return None
 
 
 class TraversalContext:
     """Context object to pass state during single-pass traversal."""
     
-    def __init__(self, content: str, file_path: str, symbols: Dict, 
+    def __init__(self, content_bytes: bytes, file_path: str, symbols: Dict,
                  functions: List, classes: List, imports: List, symbol_lookup: Dict):
-        self.content = content
+        self.content_bytes = content_bytes
         self.file_path = file_path
         self.symbols = symbols
         self.functions = functions

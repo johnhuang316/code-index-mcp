@@ -39,10 +39,11 @@ class JavaScriptParsingStrategy(ParsingStrategy):
         variable_scopes: List[Dict[str, str]] = [{}]
 
         parser = tree_sitter.Parser(self.js_language)
-        tree = parser.parse(content.encode('utf8'))
+        content_bytes = content.encode('utf8')
+        tree = parser.parse(content_bytes)
         self._traverse_js_node(
             tree.root_node,
-            content,
+            content_bytes,
             file_path,
             symbols,
             functions,
@@ -71,7 +72,7 @@ class JavaScriptParsingStrategy(ParsingStrategy):
     def _traverse_js_node(
         self,
         node,
-        content: str,
+        content_bytes: bytes,
         file_path: str,
         symbols: Dict[str, SymbolInfo],
         functions: List[str],
@@ -89,10 +90,10 @@ class JavaScriptParsingStrategy(ParsingStrategy):
         node_type = node.type
 
         if node_type == 'function_declaration':
-            name = self._get_function_name(node, content)
+            name = self._get_function_name(node, content_bytes)
             if name:
                 symbol_id = self._create_symbol_id(file_path, name)
-                signature = self._get_js_function_signature(node, content)
+                signature = self._get_js_function_signature(node, content_bytes)
                 symbols[symbol_id] = SymbolInfo(
                     type="function",
                     file=file_path,
@@ -107,7 +108,7 @@ class JavaScriptParsingStrategy(ParsingStrategy):
                 for child in node.children:
                     self._traverse_js_node(
                         child,
-                        content,
+                        content_bytes,
                         file_path,
                         symbols,
                         functions,
@@ -125,7 +126,7 @@ class JavaScriptParsingStrategy(ParsingStrategy):
             return
 
         if node_type == 'class_declaration':
-            name = self._get_class_name(node, content)
+            name = self._get_class_name(node, content_bytes)
             if name:
                 symbol_id = self._create_symbol_id(file_path, name)
                 symbols[symbol_id] = SymbolInfo(
@@ -139,7 +140,7 @@ class JavaScriptParsingStrategy(ParsingStrategy):
                 for child in node.children:
                     self._traverse_js_node(
                         child,
-                        content,
+                        content_bytes,
                         file_path,
                         symbols,
                         functions,
@@ -156,12 +157,12 @@ class JavaScriptParsingStrategy(ParsingStrategy):
                 return
 
         if node_type == 'method_definition':
-            method_name = self._get_method_name(node, content)
-            class_name = current_class or self._find_parent_class(node, content)
+            method_name = self._get_method_name(node, content_bytes)
+            class_name = current_class or self._find_parent_class(node, content_bytes)
             if method_name and class_name:
                 full_name = f"{class_name}.{method_name}"
                 symbol_id = self._create_symbol_id(file_path, full_name)
-                signature = self._get_js_function_signature(node, content)
+                signature = self._get_js_function_signature(node, content_bytes)
                 symbols[symbol_id] = SymbolInfo(
                     type="method",
                     file=file_path,
@@ -177,7 +178,7 @@ class JavaScriptParsingStrategy(ParsingStrategy):
                 for child in node.children:
                     self._traverse_js_node(
                         child,
-                        content,
+                        content_bytes,
                         file_path,
                         symbols,
                         functions,
@@ -199,7 +200,7 @@ class JavaScriptParsingStrategy(ParsingStrategy):
                 if child.type != 'variable_declarator':
                     self._traverse_js_node(
                         child,
-                        content,
+                        content_bytes,
                         file_path,
                         symbols,
                         functions,
@@ -220,11 +221,13 @@ class JavaScriptParsingStrategy(ParsingStrategy):
                 if not name_node:
                     continue
 
-                name = self._get_node_text(name_node, content)
+                name = self._get_node_text(name_node, content_bytes)
 
                 if value_node and value_node.type in ['arrow_function', 'function_expression', 'function']:
                     symbol_id = self._create_symbol_id(file_path, name)
-                    signature = content[child.start_byte:child.end_byte].split('\n')[0].strip()
+                    signature = self._slice_bytes(
+                        content_bytes, child.start_byte, child.end_byte
+                    ).split('\n')[0].strip()
                     symbols[symbol_id] = SymbolInfo(
                         type="function",
                         file=file_path,
@@ -238,7 +241,7 @@ class JavaScriptParsingStrategy(ParsingStrategy):
                     variable_scopes.append({})
                     self._traverse_js_node(
                         value_node,
-                        content,
+                        content_bytes,
                         file_path,
                         symbols,
                         functions,
@@ -254,13 +257,13 @@ class JavaScriptParsingStrategy(ParsingStrategy):
                     )
                     variable_scopes.pop()
                 else:
-                    inferred = self._infer_expression_type(value_node, content)
+                    inferred = self._infer_expression_type(value_node, content_bytes)
                     if inferred:
                         self._set_variable_type(variable_scopes, name, inferred)
                     if value_node:
                         self._traverse_js_node(
                             value_node,
-                            content,
+                            content_bytes,
                             file_path,
                             symbols,
                             functions,
@@ -281,7 +284,7 @@ class JavaScriptParsingStrategy(ParsingStrategy):
             for child in node.children:
                 self._traverse_js_node(
                     child,
-                    content,
+                    content_bytes,
                     file_path,
                     symbols,
                     functions,
@@ -302,7 +305,7 @@ class JavaScriptParsingStrategy(ParsingStrategy):
             caller = current_function or f"{file_path}:{node.start_point[0] + 1}"
             called = self._resolve_called_function(
                 node,
-                content,
+                content_bytes,
                 variable_scopes,
                 current_class
             )
@@ -318,7 +321,7 @@ class JavaScriptParsingStrategy(ParsingStrategy):
             if caller:
                 self._collect_callback_arguments(
                     node,
-                    content,
+                    content_bytes,
                     symbols,
                     symbol_lookup,
                     pending_calls,
@@ -329,15 +332,15 @@ class JavaScriptParsingStrategy(ParsingStrategy):
                 )
 
         if node_type in ['import_statement', 'require_call']:
-            import_text = self._get_node_text(node, content)
+            import_text = self._get_node_text(node, content_bytes)
             imports.append(import_text)
         elif node_type in ['export_statement', 'export_clause', 'export_default_declaration']:
-            exports.append(self._get_node_text(node, content))
+            exports.append(self._get_node_text(node, content_bytes))
 
         for child in node.children:
             self._traverse_js_node(
                 child,
-                content,
+                content_bytes,
                 file_path,
                 symbols,
                 functions,
@@ -355,7 +358,7 @@ class JavaScriptParsingStrategy(ParsingStrategy):
     def _collect_callback_arguments(
         self,
         call_node,
-        content: str,
+        content_bytes: bytes,
         symbols: Dict[str, SymbolInfo],
         symbol_lookup: Dict[str, str],
         pending_calls: List[Tuple[str, str]],
@@ -374,7 +377,7 @@ class JavaScriptParsingStrategy(ParsingStrategy):
                 continue
             callback_name = self._resolve_argument_reference(
                 argument,
-                content,
+                content_bytes,
                 variable_scopes,
                 current_class
             )
@@ -392,7 +395,7 @@ class JavaScriptParsingStrategy(ParsingStrategy):
     def _resolve_argument_reference(
         self,
         node,
-        content: str,
+        content_bytes: bytes,
         variable_scopes: List[Dict[str, str]],
         current_class: Optional[str]
     ) -> Optional[str]:
@@ -400,7 +403,7 @@ class JavaScriptParsingStrategy(ParsingStrategy):
         node_type = node.type
 
         if node_type == 'identifier':
-            return self._get_node_text(node, content)
+            return self._get_node_text(node, content_bytes)
 
         if node_type == 'member_expression':
             property_node = node.child_by_field_name('property')
@@ -412,13 +415,13 @@ class JavaScriptParsingStrategy(ParsingStrategy):
             if property_node is None:
                 return None
 
-            property_name = self._get_node_text(property_node, content)
+            property_name = self._get_node_text(property_node, content_bytes)
             qualifier_node = node.child_by_field_name('object')
             qualifier = None
             if qualifier_node is not None:
                 qualifier = self._resolve_member_qualifier(
                     qualifier_node,
-                    content,
+                    content_bytes,
                     variable_scopes,
                     current_class
                 )
@@ -428,7 +431,7 @@ class JavaScriptParsingStrategy(ParsingStrategy):
                         continue
                     qualifier = self._resolve_member_qualifier(
                         child,
-                        content,
+                        content_bytes,
                         variable_scopes,
                         current_class
                     )
@@ -443,42 +446,42 @@ class JavaScriptParsingStrategy(ParsingStrategy):
 
         return None
 
-    def _get_function_name(self, node, content: str) -> Optional[str]:
+    def _get_function_name(self, node, content_bytes: bytes) -> Optional[str]:
         """Extract function name from tree-sitter node."""
         for child in node.children:
             if child.type == 'identifier':
-                return self._get_node_text(child, content)
+                return self._get_node_text(child, content_bytes)
         return None
 
-    def _get_class_name(self, node, content: str) -> Optional[str]:
+    def _get_class_name(self, node, content_bytes: bytes) -> Optional[str]:
         """Extract class name from tree-sitter node."""
         for child in node.children:
             if child.type == 'identifier':
-                return self._get_node_text(child, content)
+                return self._get_node_text(child, content_bytes)
         return None
 
-    def _get_method_name(self, node, content: str) -> Optional[str]:
+    def _get_method_name(self, node, content_bytes: bytes) -> Optional[str]:
         """Extract method name from tree-sitter node."""
         for child in node.children:
             if child.type == 'property_identifier':
-                return self._get_node_text(child, content)
+                return self._get_node_text(child, content_bytes)
         return None
 
-    def _find_parent_class(self, node, content: str) -> Optional[str]:
+    def _find_parent_class(self, node, content_bytes: bytes) -> Optional[str]:
         """Find the parent class of a method."""
         parent = node.parent
         while parent:
             if parent.type == 'class_declaration':
-                return self._get_class_name(parent, content)
+                return self._get_class_name(parent, content_bytes)
             parent = parent.parent
         return None
 
-    def _get_js_function_signature(self, node, content: str) -> str:
+    def _get_js_function_signature(self, node, content_bytes: bytes) -> str:
         """Extract JavaScript function signature."""
-        return content[node.start_byte:node.end_byte].split('\n')[0].strip()
+        return self._slice_bytes(content_bytes, node.start_byte, node.end_byte).split('\n')[0].strip()
 
-    def _get_node_text(self, node, content: str) -> str:
-        return content[node.start_byte:node.end_byte]
+    def _get_node_text(self, node, content_bytes: bytes) -> str:
+        return self._slice_bytes(content_bytes, node.start_byte, node.end_byte)
 
     def _set_variable_type(self, variable_scopes: List[Dict[str, str]], name: str, value: str) -> None:
         if not variable_scopes:
@@ -491,7 +494,7 @@ class JavaScriptParsingStrategy(ParsingStrategy):
                 return scope[name]
         return None
 
-    def _infer_expression_type(self, node, content: str) -> Optional[str]:
+    def _infer_expression_type(self, node, content_bytes: bytes) -> Optional[str]:
         """Infer the class/type from a simple expression like `new ClassName()`."""
         if node is None:
             return None
@@ -507,20 +510,20 @@ class JavaScriptParsingStrategy(ParsingStrategy):
 
             if constructor_node:
                 if constructor_node.type == 'identifier':
-                    return self._get_node_text(constructor_node, content)
+                    return self._get_node_text(constructor_node, content_bytes)
                 if constructor_node.type == 'member_expression':
                     property_node = constructor_node.child_by_field_name('property')
                     if property_node:
-                        return self._get_node_text(property_node, content)
+                        return self._get_node_text(property_node, content_bytes)
                     for child in reversed(constructor_node.children):
                         if child.type in ['identifier', 'property_identifier']:
-                            return self._get_node_text(child, content)
+                            return self._get_node_text(child, content_bytes)
         return None
 
     def _resolve_called_function(
         self,
         node,
-        content: str,
+        content_bytes: bytes,
         variable_scopes: List[Dict[str, str]],
         current_class: Optional[str]
     ) -> Optional[str]:
@@ -531,7 +534,7 @@ class JavaScriptParsingStrategy(ParsingStrategy):
             return None
 
         if function_node.type == 'identifier':
-            return self._get_node_text(function_node, content)
+            return self._get_node_text(function_node, content_bytes)
 
         if function_node.type == 'member_expression':
             property_node = function_node.child_by_field_name('property')
@@ -543,13 +546,13 @@ class JavaScriptParsingStrategy(ParsingStrategy):
             if property_node is None:
                 return None
 
-            property_name = self._get_node_text(property_node, content)
+            property_name = self._get_node_text(property_node, content_bytes)
             object_node = function_node.child_by_field_name('object')
             qualifier = None
             if object_node is not None:
                 qualifier = self._resolve_member_qualifier(
                     object_node,
-                    content,
+                    content_bytes,
                     variable_scopes,
                     current_class
                 )
@@ -559,7 +562,7 @@ class JavaScriptParsingStrategy(ParsingStrategy):
                         continue
                     qualifier = self._resolve_member_qualifier(
                         child,
-                        content,
+                        content_bytes,
                         variable_scopes,
                         current_class
                     )
@@ -575,7 +578,7 @@ class JavaScriptParsingStrategy(ParsingStrategy):
     def _resolve_member_qualifier(
         self,
         node,
-        content: str,
+        content_bytes: bytes,
         variable_scopes: List[Dict[str, str]],
         current_class: Optional[str]
     ) -> Optional[str]:
@@ -584,7 +587,7 @@ class JavaScriptParsingStrategy(ParsingStrategy):
             return current_class
 
         if node_type == 'identifier':
-            name = self._get_node_text(node, content)
+            name = self._get_node_text(node, content_bytes)
             var_type = self._lookup_variable_type(variable_scopes, name)
             return var_type or name
 
@@ -600,11 +603,11 @@ class JavaScriptParsingStrategy(ParsingStrategy):
 
             qualifier = self._resolve_member_qualifier(
                 node.child_by_field_name('object'),
-                content,
+                content_bytes,
                 variable_scopes,
                 current_class
             )
-            property_name = self._get_node_text(property_node, content)
+            property_name = self._get_node_text(property_node, content_bytes)
             if qualifier:
                 return f"{qualifier}.{property_name}"
             return property_name

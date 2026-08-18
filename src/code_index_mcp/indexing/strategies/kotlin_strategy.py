@@ -90,7 +90,7 @@ class KotlinParsingStrategy(ParsingStrategy):
         node_type = node.type
 
         if node_type in {"class_declaration", "object_declaration", "interface_declaration"}:
-            name = self._get_kotlin_type_name(node, context.content)
+            name = self._get_kotlin_type_name(node, context.content_bytes)
             if name:
                 symbol_id = self._create_symbol_id(context.file_path, name)
                 symbol_kind = "interface" if node_type == "interface_declaration" else "class"
@@ -149,7 +149,7 @@ class KotlinParsingStrategy(ParsingStrategy):
                 self._register_call(context, current_function, called)
 
         if node_type in {"import_header", "import_declaration"}:
-            import_path = self._extract_kotlin_import_from_node(node, context.content)
+            import_path = self._extract_kotlin_import_from_node(node, context.content_bytes)
             if import_path and import_path not in context.imports:
                 context.imports.append(import_path)
 
@@ -183,10 +183,12 @@ class KotlinParsingStrategy(ParsingStrategy):
             context.pending_call_set.add(key)
             context.pending_calls.append(key)
 
-    def _get_kotlin_type_name(self, node, content: str) -> Optional[str]:
+    def _get_kotlin_type_name(self, node, content_bytes: bytes) -> Optional[str]:
         for child in node.children:
             if child.type in {"type_identifier", "simple_identifier", "identifier"}:
-                return self._clean_identifier(self._slice_bytes(content, child.start_byte, child.end_byte))
+                return self._clean_identifier(
+                    self._slice_bytes(content_bytes, child.start_byte, child.end_byte)
+                )
         return None
 
     def _get_kotlin_function_name(self, node, context: "TraversalContext") -> Optional[str]:
@@ -215,7 +217,9 @@ class KotlinParsingStrategy(ParsingStrategy):
         if expected_from_line:
             return expected_from_line
 
-        header = context.content[node.start_byte : node.end_byte].split("\n", 1)[0]
+        header = self._slice_bytes(
+            context.content_bytes, node.start_byte, node.end_byte
+        ).split("\n", 1)[0]
         expected_from_header = self._extract_fun_name_from_line(header)
         if expected_from_header:
             return expected_from_header
@@ -224,11 +228,11 @@ class KotlinParsingStrategy(ParsingStrategy):
     def _get_kotlin_function_signature(self, node, context: "TraversalContext") -> str:
         if 0 <= node.start_point[0] < len(context.lines):
             return context.lines[node.start_point[0]].strip()
-        snippet = context.content[node.start_byte : node.end_byte]
+        snippet = self._slice_bytes(context.content_bytes, node.start_byte, node.end_byte)
         return snippet.split("\n", 1)[0].strip()
 
-    def _extract_kotlin_import_from_node(self, node, content: str) -> Optional[str]:
-        text = self._slice_bytes(content, node.start_byte, node.end_byte).strip()
+    def _extract_kotlin_import_from_node(self, node, content_bytes: bytes) -> Optional[str]:
+        text = self._slice_bytes(content_bytes, node.start_byte, node.end_byte).strip()
         if not text.startswith("import"):
             return None
         text = text[len("import") :].strip()
@@ -408,15 +412,6 @@ class KotlinParsingStrategy(ParsingStrategy):
         ):
             end += 1
         return content_bytes[start:end]
-
-    def _slice_bytes(self, content_or_bytes, start: int, end: int) -> str:
-        data = content_or_bytes if isinstance(content_or_bytes, (bytes, bytearray)) else content_or_bytes.encode("utf8")
-        start = max(0, min(start, len(data)))
-        end = max(0, min(end, len(data)))
-        if end < start:
-            start, end = end, start
-        return data[start:end].decode("utf8", errors="ignore")
-
 
 class TraversalContext:
     """Context object to pass state during single-pass traversal."""

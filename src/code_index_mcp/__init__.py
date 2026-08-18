@@ -3,4 +3,4 @@
 A Model Context Protocol server for code indexing, searching, and analysis.
 """
 
-__version__ = "2.17.0"  # hermes-code-index fork
+__version__ = "2.17.1"  # hermes-code-index fork
