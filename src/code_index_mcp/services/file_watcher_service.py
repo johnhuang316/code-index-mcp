@@ -530,7 +530,10 @@ class DebounceEventHandler(FileSystemEventHandler):
 
         try:
             if callback:
-                callback(*((), {"changed_files": changed}) if changed else ())
+                if changed:
+                    callback(changed_files=changed)
+                else:
+                    callback()
             else:
                 self.logger.warning("No rebuild callback configured")
         except Exception as e:
