@@ -47,6 +47,10 @@ class DeepIndexManager:
             timeout=timeout,
         )
 
+    def refresh_file(self, file_path: str) -> bool:
+        """Incrementally re-index a single changed file."""
+        return self._mgr.refresh_file(file_path)
+
     def find_files(self, pattern: str = "*") -> List[str]:
         return self._mgr.find_files(pattern)
 

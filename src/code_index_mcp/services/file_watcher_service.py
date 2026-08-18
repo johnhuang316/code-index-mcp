@@ -13,7 +13,7 @@ import platform
 import select
 import traceback
 from threading import Condition, Lock, Timer
-from typing import Optional, Callable, List, Type
+from typing import Optional, Callable, List, Type, Set
 from pathlib import Path
 
 try:
@@ -391,7 +391,8 @@ class DebounceEventHandler(FileSystemEventHandler):
 
         Args:
             debounce_seconds: Number of seconds to wait before triggering rebuild
-            rebuild_callback: Function to call when rebuild is needed
+            rebuild_callback: Function to call when rebuild is needed.
+                Receives a list of changed file paths as keyword argument ``changed_files``.
             base_path: Base project path for filtering
             logger: Logger instance for debug messages
             additional_excludes: Additional patterns to exclude
@@ -409,6 +410,7 @@ class DebounceEventHandler(FileSystemEventHandler):
         self._generation = 0
         self._stopped = False
         self._inflight_callbacks = 0
+        self._pending_files: Set[str] = set()
 
         # Use centralized file filtering
         self.file_filter = FileFilter(additional_excludes)
@@ -425,6 +427,8 @@ class DebounceEventHandler(FileSystemEventHandler):
 
         if should_process:
             self.logger.info("File changed: %s - %s", event.event_type, event.src_path)
+            with self._lock:
+                self._pending_files.add(event.src_path)
             self.reset_debounce_timer()
         else:
             # Only log at debug level for filtered events
@@ -518,11 +522,18 @@ class DebounceEventHandler(FileSystemEventHandler):
             self.debounce_timer = None
             self._inflight_callbacks += 1
 
-        self.logger.info("File changes detected, triggering rebuild")
+            # Capture and clear pending files
+            changed = list(self._pending_files)
+            self._pending_files.clear()
+
+        self.logger.info("File changes detected, triggering rebuild (%d files)", len(changed))
 
         try:
             if callback:
-                callback()
+                if changed:
+                    callback(changed_files=changed)
+                else:
+                    callback()
             else:
                 self.logger.warning("No rebuild callback configured")
         except Exception as e:
