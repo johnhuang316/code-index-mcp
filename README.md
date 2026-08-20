@@ -103,6 +103,44 @@ Add overrides only if you run the CLI inside a restricted container.
 When sharing the manifests, remind consumers to supply `--project-path` (or to call
 `set_project_path`) so the server indexes the intended repository.
 
+## Agent Skills
+
+Configuring the server makes its tools available; it does not tell an agent when to prefer
+them. Agents still tend to fall back on their own file tools and on `grep`, `find`, or
+whole-file reads, which skips the index entirely.
+
+This repository ships a portable skill, `code-index-first`, that covers session setup, when
+to use `search_code_advanced` versus `find_files`, and how to answer "what does this project
+do" through `get_file_summary` and `get_symbol_body` instead of reading whole files.
+
+Install it with the [`skills` CLI](https://github.com/vercel-labs/skills):
+
+```bash
+# Install into the current project, for the agents the CLI detects
+npx skills add johnhuang316/code-index-mcp --skill code-index-first
+
+# Install once for every project
+npx skills add johnhuang316/code-index-mcp --skill code-index-first --global
+
+# Target one agent, non-interactively
+npx skills add johnhuang316/code-index-mcp --skill code-index-first -a claude-code -y
+```
+
+A project install keeps the canonical copy in `.agents/skills/` and symlinks the skills
+directory of each detected agent to it, so `.claude/skills/code-index-first` and the copy under
+`.agents/` stay the same file.
+
+To see everything this repository exposes, including the maintainer-facing skills, run:
+
+```bash
+npx skills add johnhuang316/code-index-mcp --list
+```
+
+The CLI supports Claude Code, Codex, Cursor, OpenCode, and many other agents, and installs to
+whichever ones it detects. Skills are plain [`SKILL.md`](https://agentskills.io) files, so they
+can also be copied by hand from [`.agents/skills/`](.agents/skills) into an agent's skills
+directory.
+
 ## Typical Use Cases
 
 **Code Review**: "Find all places using the old API"  
