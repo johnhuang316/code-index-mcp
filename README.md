@@ -116,15 +116,19 @@ do" through `get_file_summary` and `get_symbol_body` instead of reading whole fi
 Install it with the [`skills` CLI](https://github.com/vercel-labs/skills):
 
 ```bash
-# Install into the current project (writes to your agent's skills directory)
+# Install into the current project, for the agents the CLI detects
 npx skills add johnhuang316/code-index-mcp --skill code-index-first
 
 # Install once for every project
 npx skills add johnhuang316/code-index-mcp --skill code-index-first --global
 
-# Target specific agents, non-interactively
+# Target one agent, non-interactively
 npx skills add johnhuang316/code-index-mcp --skill code-index-first -a claude-code -y
 ```
+
+A project install keeps the canonical copy in `.agents/skills/` and symlinks the skills
+directory of each detected agent to it, so `.claude/skills/code-index-first` and the copy under
+`.agents/` stay the same file.
 
 To see everything this repository exposes, including the maintainer-facing skills, run:
 
