@@ -120,8 +120,8 @@ When sharing the manifests, remind consumers to supply `--project-path` (or to c
 - **File Analysis**: Deep insights into structure, imports, classes, methods, and complexity metrics after running `build_deep_index`
 
 ### 🗂️ **Multi-Language Support**  
-- **10 Languages with Tree-sitter AST Parsing**: Python, JavaScript, TypeScript, Java, Kotlin, C#, Go, Objective-C, Zig, Rust
-- **50+ File Types with Fallback Strategy**: C/C++, Ruby, PHP, and all other programming languages
+- **11 Languages with Tree-sitter AST Parsing**: Python, JavaScript, TypeScript, Java, Kotlin, C#, Go, Objective-C, Zig, Rust, PHP
+- **50+ File Types with Fallback Strategy**: C/C++, Ruby, and all other programming languages
 - **Document & Config Files**: Markdown, JSON, YAML, XML with appropriate handling
 - **Web Frontend**: Vue, React, Svelte, HTML, CSS, SCSS
 - **Java Web & Build**: JSP/Tag files (`.jsp`, `.jspx`, `.jspf`, `.tag`, `.tagx`), Grails/GSP (`.gsp`), Gradle & Groovy builds (`.gradle`, `.groovy`), `.properties`, and Protocol Buffers (`.proto`)
@@ -158,12 +158,13 @@ When sharing the manifests, remind consumers to supply `--project-path` (or to c
 - **Rust** (`.rs`) - Functions, module-aware names, impl methods, structs/enums/traits, and basic call relationships
 - **Objective-C** (`.m`, `.mm`) - Class/instance method distinction with +/- notation
 - **Zig** (`.zig`, `.zon`) - Function and struct parsing with tree-sitter AST
+- **PHP** (`.php`) - Namespace-aware classes, interfaces, traits and enums with method signatures, docblocks, and call relationships
 
 **All Other Programming Languages:**
 All other programming languages use the **FallbackParsingStrategy** which provides basic file indexing and metadata extraction. This includes:
 - **System & Low-Level:** C/C++ (`.c`, `.cpp`, `.h`, `.hpp`)
 - **Object-Oriented:** Scala (`.scala`), Swift (`.swift`)
-- **Scripting & Dynamic:** Ruby (`.rb`), PHP (`.php`), Shell (`.sh`, `.bash`)
+- **Scripting & Dynamic:** Ruby (`.rb`), Shell (`.sh`, `.bash`)
 - **And 40+ more file types** - All handled through the fallback strategy for basic indexing
 
 </details>

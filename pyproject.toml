@@ -25,6 +25,7 @@ dependencies = [
     "tree-sitter-rust>=0.20.0",
     "pathspec>=0.12.1",
     "msgpack>=1.0.0",
+    "tree-sitter-php>=0.25.1",
 ]
 
 [project.urls]
